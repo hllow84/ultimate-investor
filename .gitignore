@@ -25,6 +25,11 @@ dist/
 *.swp
 *.swo
 
+# SQLite database (user data — not committed)
+*.db
+*.db-shm
+*.db-wal
+
 # OS
 .DS_Store
 Thumbs.db

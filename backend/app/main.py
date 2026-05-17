@@ -1,6 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import stocks, analysis, watchlist, alerts
+from app.db.database import engine
+from app.db import models
+
+# Create all tables on startup (safe to re-run — no-op if already exist)
+models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Ultimate Investor API",
