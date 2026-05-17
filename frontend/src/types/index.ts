@@ -50,17 +50,24 @@ export interface SentimentResult {
   summary: string;
 }
 
-export interface YoYFinancials {
-  ticker: string;
-  years: string[];
+export interface FinancialPeriod {
+  labels: string[];
   revenue: (number | null)[];
   revenue_growth: (number | null)[];
   net_income: (number | null)[];
+  net_income_growth: (number | null)[];
   eps: (number | null)[];
   gross_margin: (number | null)[];
   operating_margin: (number | null)[];
   net_margin: (number | null)[];
   free_cash_flow: (number | null)[];
+  fcf_growth: (number | null)[];
+}
+
+export interface YoYFinancials {
+  ticker: string;
+  annual: FinancialPeriod;
+  quarterly: FinancialPeriod;
 }
 
 export interface ValuationRange {

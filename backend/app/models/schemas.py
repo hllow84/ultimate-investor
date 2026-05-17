@@ -54,17 +54,24 @@ class SentimentResult(BaseModel):
     summary: str
 
 
+class FinancialPeriod(BaseModel):
+    labels: list[str]
+    revenue: list[Optional[float]]
+    revenue_growth: list[Optional[float]]    # % YoY (quarterly = same quarter prior year)
+    net_income: list[Optional[float]]
+    net_income_growth: list[Optional[float]] # % YoY
+    eps: list[Optional[float]]
+    gross_margin: list[Optional[float]]      # %
+    operating_margin: list[Optional[float]]  # %
+    net_margin: list[Optional[float]]        # %
+    free_cash_flow: list[Optional[float]]
+    fcf_growth: list[Optional[float]]        # % YoY
+
+
 class YoYFinancials(BaseModel):
     ticker: str
-    years: list[str]
-    revenue: list[Optional[float]]
-    revenue_growth: list[Optional[float]]   # % YoY
-    net_income: list[Optional[float]]
-    eps: list[Optional[float]]
-    gross_margin: list[Optional[float]]     # %
-    operating_margin: list[Optional[float]] # %
-    net_margin: list[Optional[float]]       # %
-    free_cash_flow: list[Optional[float]]
+    annual: FinancialPeriod
+    quarterly: FinancialPeriod
 
 
 class ValuationRange(BaseModel):
