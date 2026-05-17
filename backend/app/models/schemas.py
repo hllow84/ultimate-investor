@@ -27,9 +27,11 @@ class ValuationResult(BaseModel):
     ticker: str
     dcf_value: Optional[float] = None
     pe_ratio: Optional[float] = None
+    forward_pe: Optional[float] = None
     ev_ebitda: Optional[float] = None
     peg_ratio: Optional[float] = None
     price_to_book: Optional[float] = None
+    analyst_target: Optional[float] = None
     fair_value_estimate: float
     upside_pct: float
     verdict: str  # "undervalued" | "fairly valued" | "overvalued"

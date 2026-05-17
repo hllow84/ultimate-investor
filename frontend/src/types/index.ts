@@ -23,9 +23,11 @@ export interface ValuationResult {
   ticker: string;
   dcf_value?: number;
   pe_ratio?: number;
+  forward_pe?: number;
   ev_ebitda?: number;
   peg_ratio?: number;
   price_to_book?: number;
+  analyst_target?: number;
   fair_value_estimate: number;
   upside_pct: number;
   verdict: "undervalued" | "fairly valued" | "overvalued";

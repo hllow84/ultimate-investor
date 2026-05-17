@@ -10,10 +10,12 @@ export default function ValuationCard({ data }: { data: ValuationResult }) {
   const color = verdictColor[data.verdict];
   const metrics = [
     { label: "DCF Value", value: data.dcf_value ? `$${data.dcf_value.toFixed(2)}` : "—" },
-    { label: "P/E Ratio", value: data.pe_ratio ? data.pe_ratio.toFixed(1) : "—" },
+    { label: "Trailing P/E", value: data.pe_ratio ? data.pe_ratio.toFixed(1) : "—" },
+    { label: "Forward P/E", value: data.forward_pe ? data.forward_pe.toFixed(1) : "—" },
     { label: "EV/EBITDA", value: data.ev_ebitda ? data.ev_ebitda.toFixed(1) : "—" },
     { label: "PEG Ratio", value: data.peg_ratio ? data.peg_ratio.toFixed(2) : "—" },
     { label: "Price/Book", value: data.price_to_book ? data.price_to_book.toFixed(2) : "—" },
+    { label: "Analyst Target", value: data.analyst_target ? `$${data.analyst_target.toFixed(2)}` : "—" },
   ];
 
   return (
