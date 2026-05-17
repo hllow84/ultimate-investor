@@ -2,6 +2,8 @@ import type {
   StockSummary,
   HealthScore,
   ValuationResult,
+  ValuationRange,
+  YoYFinancials,
   MoatAnalysis,
   SentimentResult,
   WatchlistItem,
@@ -39,6 +41,8 @@ export const api = {
   analysis: {
     health: (ticker: string) => get<HealthScore>(`/analysis/${ticker}/health`),
     valuation: (ticker: string) => get<ValuationResult>(`/analysis/${ticker}/valuation`),
+    valuationRange: (ticker: string) => get<ValuationRange>(`/analysis/${ticker}/valuation-range`),
+    financials: (ticker: string) => get<YoYFinancials>(`/analysis/${ticker}/financials`),
     moat: (ticker: string) => get<MoatAnalysis>(`/analysis/${ticker}/moat`),
     sentiment: (ticker: string) => get<SentimentResult>(`/analysis/${ticker}/sentiment`),
   },

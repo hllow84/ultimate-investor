@@ -54,6 +54,32 @@ class SentimentResult(BaseModel):
     summary: str
 
 
+class YoYFinancials(BaseModel):
+    ticker: str
+    years: list[str]
+    revenue: list[Optional[float]]
+    revenue_growth: list[Optional[float]]   # % YoY
+    net_income: list[Optional[float]]
+    eps: list[Optional[float]]
+    gross_margin: list[Optional[float]]     # %
+    operating_margin: list[Optional[float]] # %
+    net_margin: list[Optional[float]]       # %
+    free_cash_flow: list[Optional[float]]
+
+
+class ValuationRange(BaseModel):
+    ticker: str
+    current_price: float
+    bear: float
+    base: float
+    bull: float
+    bear_reasoning: str
+    base_reasoning: str
+    bull_reasoning: str
+    ai_summary: str
+    inputs: dict
+
+
 class WatchlistItem(BaseModel):
     ticker: str
     added_at: Optional[str] = None

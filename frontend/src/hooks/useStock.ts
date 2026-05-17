@@ -45,6 +45,24 @@ export function useSentiment(ticker: string) {
   });
 }
 
+export function useValuationRange(ticker: string) {
+  return useQuery({
+    queryKey: ["valuation-range", ticker],
+    queryFn: () => api.analysis.valuationRange(ticker),
+    enabled: !!ticker,
+    staleTime: 1000 * 60 * 10,
+  });
+}
+
+export function useYoYFinancials(ticker: string) {
+  return useQuery({
+    queryKey: ["financials", ticker],
+    queryFn: () => api.analysis.financials(ticker),
+    enabled: !!ticker,
+    staleTime: 1000 * 60 * 60,
+  });
+}
+
 export function useWatchlist() {
   return useQuery({
     queryKey: ["watchlist"],

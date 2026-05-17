@@ -50,6 +50,32 @@ export interface SentimentResult {
   summary: string;
 }
 
+export interface YoYFinancials {
+  ticker: string;
+  years: string[];
+  revenue: (number | null)[];
+  revenue_growth: (number | null)[];
+  net_income: (number | null)[];
+  eps: (number | null)[];
+  gross_margin: (number | null)[];
+  operating_margin: (number | null)[];
+  net_margin: (number | null)[];
+  free_cash_flow: (number | null)[];
+}
+
+export interface ValuationRange {
+  ticker: string;
+  current_price: number;
+  bear: number;
+  base: number;
+  bull: number;
+  bear_reasoning: string;
+  base_reasoning: string;
+  bull_reasoning: string;
+  ai_summary: string;
+  inputs: Record<string, unknown>;
+}
+
 export interface WatchlistItem {
   ticker: string;
   added_at?: string;
