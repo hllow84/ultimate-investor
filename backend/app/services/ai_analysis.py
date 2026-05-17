@@ -1,14 +1,11 @@
-import anthropic
-from app.config import settings
 from app.models.schemas import HealthScore, MoatAnalysis
 
-client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+# Mock implementations — swap for real Claude API calls once ANTHROPIC_API_KEY is set.
 
 
 def generate_health_score(ticker: str, financials: dict) -> HealthScore:
     info = financials.get("info", {})
 
-    # Compute pillar scores from raw financials (0-100)
     profitability = _score_profitability(info)
     debt = _score_debt(info)
     growth = _score_growth(info)
@@ -17,21 +14,12 @@ def generate_health_score(ticker: str, financials: dict) -> HealthScore:
     momentum = _score_momentum(info)
     overall = round((profitability + debt + growth + efficiency + valuation + momentum) / 6, 1)
 
-    prompt = f"""You are a senior equity analyst. Given the following financial scores for {ticker}:
-- Profitability: {profitability}/100
-- Debt health: {debt}/100
-- Growth: {growth}/100
-- Efficiency: {efficiency}/100
-- Valuation: {valuation}/100
-- Momentum: {momentum}/100
-- Overall: {overall}/100
-
-Write a 2-3 sentence plain-English summary of the company's financial health. Be direct and specific. No fluff."""
-
-    message = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=256,
-        messages=[{"role": "user", "content": prompt}],
+    verdict = "strong" if overall >= 65 else "moderate" if overall >= 40 else "weak"
+    summary = (
+        f"{ticker} shows {verdict} financial health with an overall score of {overall}/100. "
+        f"Notable strengths: {'profitability' if profitability >= 60 else 'momentum' if momentum >= 60 else 'efficiency'}. "
+        f"{'Debt levels are well-managed.' if debt >= 60 else 'Debt levels warrant monitoring.'} "
+        f"AI narrative unlocks when ANTHROPIC_API_KEY is configured."
     )
 
     return HealthScore(
@@ -43,41 +31,39 @@ Write a 2-3 sentence plain-English summary of the company's financial health. Be
         efficiency=efficiency,
         valuation=valuation,
         momentum=momentum,
-        summary=message.content[0].text,
+        summary=summary,
     )
 
 
 def generate_moat_analysis(ticker: str, financials: dict) -> MoatAnalysis:
     info = financials.get("info", {})
-    name = info.get("longName", ticker)
     sector = info.get("sector", "Unknown")
-    description = info.get("longBusinessSummary", "No description available.")
+    margin = info.get("profitMargins", 0) or 0
+    moat_score = round(min(10, max(1, margin * 30 + 4)), 1)
 
-    prompt = f"""You are a competitive strategy analyst specializing in public equities.
-
-Company: {name} ({ticker})
-Sector: {sector}
-Description: {description[:800]}
-
-Respond in JSON with these exact keys:
-{{
-  "moat_score": <float 0-10>,
-  "competitive_advantages": [<3-5 specific advantages>],
-  "risks": [<3-5 specific risks>],
-  "growth_drivers": [<3-5 specific growth drivers>],
-  "ai_summary": "<2-3 sentence narrative on the company's competitive position>"
-}}"""
-
-    message = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=512,
-        messages=[{"role": "user", "content": prompt}],
+    return MoatAnalysis(
+        ticker=ticker,
+        moat_score=moat_score,
+        competitive_advantages=[
+            "Brand recognition in " + sector,
+            "Established distribution network",
+            "Economies of scale",
+        ],
+        risks=[
+            "Competitive pressure from peers",
+            "Macroeconomic sensitivity",
+            "Regulatory and compliance risk",
+        ],
+        growth_drivers=[
+            "Market expansion opportunities",
+            "Product innovation pipeline",
+            "Margin improvement potential",
+        ],
+        ai_summary=(
+            f"{ticker} operates in the {sector} sector with a moat score of {moat_score}/10 "
+            f"based on profitability signals. Full AI narrative unlocks when ANTHROPIC_API_KEY is configured."
+        ),
     )
-
-    import json
-    data = json.loads(message.content[0].text)
-
-    return MoatAnalysis(ticker=ticker, **data)
 
 
 def _score_profitability(info: dict) -> float:

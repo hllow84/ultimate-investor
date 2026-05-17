@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     # Database
-    database_url: str = "postgresql://user:password@localhost:5432/ultimate_investor"
+    database_url: str = "sqlite:///./ultimate_investor.db"
 
     # Claude AI
     anthropic_api_key: str = ""
