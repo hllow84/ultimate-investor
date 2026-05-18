@@ -16,6 +16,7 @@ export interface HealthScore {
   efficiency: number;
   valuation: number;
   momentum: number;
+  predictability: number;
   summary: string;
 }
 

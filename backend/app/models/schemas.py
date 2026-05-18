@@ -20,6 +20,7 @@ class HealthScore(BaseModel):
     efficiency: float
     valuation: float
     momentum: float
+    predictability: float
     summary: str
 
 

@@ -7,17 +7,22 @@ def generate_health_score(ticker: str, financials: dict) -> HealthScore:
     info = financials.get("info", {})
 
     profitability = _score_profitability(info)
-    debt = _score_debt(info)
-    growth = _score_growth(info)
-    efficiency = _score_efficiency(info)
-    valuation = _score_valuation(info)
-    momentum = _score_momentum(info)
-    overall = round((profitability + debt + growth + efficiency + valuation + momentum) / 6, 1)
+    debt          = _score_debt(info)
+    growth        = _score_growth(info)
+    efficiency    = _score_efficiency(info)
+    valuation     = _score_valuation(info)
+    momentum      = _score_momentum(info)
+    predictability = _score_predictability(ticker)
+
+    overall = round(
+        (profitability + debt + growth + efficiency + valuation + momentum + predictability) / 7, 1
+    )
 
     verdict = "strong" if overall >= 65 else "moderate" if overall >= 40 else "weak"
+    pred_label = "highly predictable" if predictability >= 70 else "moderately predictable" if predictability >= 45 else "unpredictable"
     summary = (
         f"{ticker} shows {verdict} financial health with an overall score of {overall}/100. "
-        f"Notable strengths: {'profitability' if profitability >= 60 else 'momentum' if momentum >= 60 else 'efficiency'}. "
+        f"Revenue and earnings are {pred_label} (predictability: {predictability}/100). "
         f"{'Debt levels are well-managed.' if debt >= 60 else 'Debt levels warrant monitoring.'} "
         f"AI narrative unlocks when ANTHROPIC_API_KEY is configured."
     )
@@ -31,6 +36,7 @@ def generate_health_score(ticker: str, financials: dict) -> HealthScore:
         efficiency=efficiency,
         valuation=valuation,
         momentum=momentum,
+        predictability=predictability,
         summary=summary,
     )
 
@@ -65,6 +71,75 @@ def generate_moat_analysis(ticker: str, financials: dict) -> MoatAnalysis:
         ),
     )
 
+
+# ── Predictability ────────────────────────────────────────────────────────────
+
+def _score_predictability(ticker: str) -> float:
+    """
+    Measures revenue and earnings consistency over the last 5 annual periods.
+    Rewards: steady growth, low variance, no negative years.
+    Penalises: volatile swings, declining revenues/earnings.
+    """
+    try:
+        from app.services.financials import get_yoy_financials
+        yoy = get_yoy_financials(ticker)
+        annual = yoy.annual
+
+        rev_growth = [g for g in annual.revenue_growth if g is not None]
+        ni_growth  = [g for g in annual.net_income_growth if g is not None]
+
+        if not rev_growth:
+            return 50.0
+
+        rev_score = _consistency_score(rev_growth)
+        ni_score  = _consistency_score(ni_growth) if ni_growth else rev_score
+
+        # Revenue weighted slightly more — earnings can be distorted by one-time items
+        combined = rev_score * 0.55 + ni_score * 0.45
+        return round(min(100.0, max(0.0, combined)), 1)
+    except Exception:
+        return 50.0
+
+
+def _consistency_score(growth_rates: list[float]) -> float:
+    """
+    Score 0–100 for a series of YoY growth rates.
+    Three components (max 50 + 35 + 15 = 100):
+      • Growth level  (0–50): higher mean = more valuable franchise
+      • Stability     (0–35): lower std dev = easier to model / predict
+      • Directionality(0–15): fraction of positive years
+    """
+    if not growth_rates:
+        return 50.0
+
+    n = len(growth_rates)
+    mean_g = sum(growth_rates) / n
+    variance = sum((g - mean_g) ** 2 for g in growth_rates) / n
+    std_g = variance ** 0.5
+
+    # Growth level component
+    if mean_g >= 20:   growth_score = 50
+    elif mean_g >= 10: growth_score = 40
+    elif mean_g >= 5:  growth_score = 30
+    elif mean_g >= 0:  growth_score = 20
+    else:              growth_score = 5   # shrinking
+
+    # Stability component (penalises volatility in growth rates)
+    if std_g <= 5:     stability_score = 35
+    elif std_g <= 10:  stability_score = 28
+    elif std_g <= 15:  stability_score = 20
+    elif std_g <= 25:  stability_score = 12
+    elif std_g <= 50:  stability_score = 5
+    else:              stability_score = 0
+
+    # Directionality component
+    pos_frac = sum(1 for g in growth_rates if g >= 0) / n
+    direction_score = pos_frac * 15
+
+    return growth_score + stability_score + direction_score
+
+
+# ── Other pillar scorers ──────────────────────────────────────────────────────
 
 def _score_profitability(info: dict) -> float:
     margin = info.get("profitMargins", 0) or 0

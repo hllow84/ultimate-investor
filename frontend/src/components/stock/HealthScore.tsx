@@ -7,6 +7,7 @@ const PILLARS = [
   { key: "efficiency", label: "Efficiency" },
   { key: "valuation", label: "Valuation" },
   { key: "momentum", label: "Momentum" },
+  { key: "predictability", label: "Predictability" },
 ] as const;
 
 function scoreColor(score: number) {
