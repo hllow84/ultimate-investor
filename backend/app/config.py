@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
 
     # Stock data
+    fmp_api_key: str = ""
     alpha_vantage_api_key: str = ""
     polygon_api_key: str = ""
 
