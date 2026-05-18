@@ -122,3 +122,4 @@ class Alert(BaseModel):
     threshold: float
     metric: Optional[str] = None
     active: bool = True
+    triggered_at: Optional[str] = None

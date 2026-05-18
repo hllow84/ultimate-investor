@@ -22,3 +22,4 @@ class Alert(Base):
     metric = Column(String, nullable=True)
     active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    triggered_at = Column(DateTime, nullable=True)

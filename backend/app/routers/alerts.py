@@ -57,4 +57,5 @@ def _to_schema(row: AlertRow) -> Alert:
         threshold=row.threshold,
         metric=row.metric,
         active=row.active,
+        triggered_at=row.triggered_at.isoformat() if row.triggered_at else None,
     )

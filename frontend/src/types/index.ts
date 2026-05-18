@@ -118,4 +118,5 @@ export interface Alert {
   threshold: number;
   metric?: string;
   active: boolean;
+  triggered_at?: string | null;
 }
