@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Star } from "lucide-react";
 import {
   useStockSummary, useHealthScore, useValuation, useMoat,
-  useSentiment, useValuationRange, useYoYFinancials, useWatchlist,
+  useSentiment, useValuationRange, useYoYFinancials, useWatchlist, useMomentum,
 } from "@/hooks/useStock";
 import { api } from "@/api/client";
 import HealthScoreCard from "@/components/stock/HealthScore";
@@ -12,6 +12,7 @@ import ValuationRangeCard from "@/components/stock/ValuationRangeCard";
 import MoatCard from "@/components/stock/MoatAnalysis";
 import SentimentCard from "@/components/stock/SentimentBadge";
 import FinancialsChart from "@/components/stock/FinancialsChart";
+import MomentumCard from "@/components/stock/MomentumCard";
 
 export default function StockDetail() {
   const { ticker = "" } = useParams<{ ticker: string }>();
@@ -25,6 +26,7 @@ export default function StockDetail() {
   const { data: financials, isLoading: loadingFin } = useYoYFinancials(t);
   const { data: moat, isLoading: loadingMoat } = useMoat(t);
   const { data: sentiment, isLoading: loadingSent } = useSentiment(t);
+  const { data: momentum, isLoading: loadingMomentum } = useMomentum(t);
   const { data: watchlist = [] } = useWatchlist();
 
   const isWatched = watchlist.some((w) => w.ticker === t);
@@ -86,10 +88,11 @@ export default function StockDetail() {
 
       {/* 2-col grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {loadingHealth  ? <CardSkeleton title="AI Health Score" />  : health     && <HealthScoreCard data={health} />}
-        {loadingVal     ? <CardSkeleton title="Valuation Metrics" /> : valuation  && <ValuationCard data={valuation} />}
-        {loadingMoat    ? <CardSkeleton title="Moat Analysis" />     : moat       && <MoatCard data={moat} />}
-        {loadingSent    ? <CardSkeleton title="News Sentiment" />    : sentiment  && <SentimentCard data={sentiment} />}
+        {loadingHealth    ? <CardSkeleton title="AI Health Score" />        : health     && <HealthScoreCard data={health} />}
+        {loadingVal       ? <CardSkeleton title="Valuation Metrics" />      : valuation  && <ValuationCard data={valuation} />}
+        {loadingMoat      ? <CardSkeleton title="Investment Thesis" />      : moat       && <MoatCard data={moat} />}
+        {loadingSent      ? <CardSkeleton title="News Sentiment" />         : sentiment  && <SentimentCard data={sentiment} />}
+        {loadingMomentum  ? <CardSkeleton title="Technical Momentum" fullWidth /> : momentum && <MomentumCard data={momentum} />}
       </div>
     </div>
   );

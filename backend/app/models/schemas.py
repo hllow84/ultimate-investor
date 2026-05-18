@@ -41,9 +41,8 @@ class ValuationResult(BaseModel):
 class MoatAnalysis(BaseModel):
     ticker: str
     moat_score: float  # 0-10
-    competitive_advantages: list[str]
-    risks: list[str]
-    growth_drivers: list[str]
+    bull_thesis: list[str]
+    bear_thesis: list[str]
     ai_summary: str
 
 
@@ -86,6 +85,28 @@ class ValuationRange(BaseModel):
     bull_reasoning: str
     ai_summary: str
     inputs: dict
+
+
+class PricePoint(BaseModel):
+    date: str
+    close: float
+    sma50: Optional[float] = None
+    sma200: Optional[float] = None
+
+
+class TechnicalMomentum(BaseModel):
+    ticker: str
+    rsi: float
+    sma50: Optional[float] = None
+    sma200: Optional[float] = None
+    current_price: float
+    pct_above_sma50: Optional[float] = None
+    pct_above_sma200: Optional[float] = None
+    w52_high: float
+    w52_low: float
+    pct_from_52w_high: float
+    signal: str  # "bullish" | "neutral" | "bearish"
+    price_history: list[PricePoint]
 
 
 class WatchlistItem(BaseModel):

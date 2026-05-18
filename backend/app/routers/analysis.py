@@ -5,9 +5,10 @@ from app.services.valuation import compute_valuation
 from app.services.valuation_range import compute_valuation_range
 from app.services.sentiment import analyze_sentiment
 from app.services.financials import get_yoy_financials
+from app.services.momentum import compute_momentum
 from app.models.schemas import (
     HealthScore, ValuationResult, ValuationRange,
-    MoatAnalysis, SentimentResult, YoYFinancials,
+    MoatAnalysis, SentimentResult, YoYFinancials, TechnicalMomentum,
 )
 
 router = APIRouter()
@@ -62,5 +63,13 @@ def sentiment(ticker: str):
     try:
         news = get_news(ticker.upper())
         return analyze_sentiment(ticker.upper(), news)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{ticker}/momentum", response_model=TechnicalMomentum)
+def momentum(ticker: str):
+    try:
+        return compute_momentum(ticker.upper())
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

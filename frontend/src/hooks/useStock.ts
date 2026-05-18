@@ -63,6 +63,15 @@ export function useYoYFinancials(ticker: string) {
   });
 }
 
+export function useMomentum(ticker: string) {
+  return useQuery({
+    queryKey: ["momentum", ticker],
+    queryFn: () => api.analysis.momentum(ticker),
+    enabled: !!ticker,
+    staleTime: 1000 * 60 * 5,
+  });
+}
+
 export function useWatchlist() {
   return useQuery({
     queryKey: ["watchlist"],

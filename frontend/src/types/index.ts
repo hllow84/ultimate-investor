@@ -37,9 +37,8 @@ export interface ValuationResult {
 export interface MoatAnalysis {
   ticker: string;
   moat_score: number;
-  competitive_advantages: string[];
-  risks: string[];
-  growth_drivers: string[];
+  bull_thesis: string[];
+  bear_thesis: string[];
   ai_summary: string;
 }
 
@@ -82,6 +81,28 @@ export interface ValuationRange {
   bull_reasoning: string;
   ai_summary: string;
   inputs: Record<string, unknown>;
+}
+
+export interface PricePoint {
+  date: string;
+  close: number;
+  sma50?: number | null;
+  sma200?: number | null;
+}
+
+export interface TechnicalMomentum {
+  ticker: string;
+  rsi: number;
+  sma50?: number | null;
+  sma200?: number | null;
+  current_price: number;
+  pct_above_sma50?: number | null;
+  pct_above_sma200?: number | null;
+  w52_high: number;
+  w52_low: number;
+  pct_from_52w_high: number;
+  signal: "bullish" | "neutral" | "bearish";
+  price_history: PricePoint[];
 }
 
 export interface WatchlistItem {

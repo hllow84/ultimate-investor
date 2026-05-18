@@ -1,6 +1,5 @@
 from app.models.schemas import HealthScore, MoatAnalysis
-
-# Mock implementations — swap for real Claude API calls once ANTHROPIC_API_KEY is set.
+from app.config import settings
 
 
 def generate_health_score(ticker: str, financials: dict) -> HealthScore:
@@ -43,31 +42,144 @@ def generate_health_score(ticker: str, financials: dict) -> HealthScore:
 
 def generate_moat_analysis(ticker: str, financials: dict) -> MoatAnalysis:
     info = financials.get("info", {})
-    sector = info.get("sector", "Unknown")
+    if settings.anthropic_api_key:
+        return _ai_moat(ticker, info)
+    return _computed_moat(ticker, info)
+
+
+def _moat_score(info: dict) -> float:
     margin = info.get("profitMargins", 0) or 0
-    moat_score = round(min(10, max(1, margin * 30 + 4)), 1)
+    return round(min(10, max(1, margin * 30 + 4)), 1)
+
+
+def _ai_moat(ticker: str, info: dict) -> MoatAnalysis:
+    import anthropic, json
+    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+
+    name = info.get("longName", ticker)
+    sector = info.get("sector", "Unknown")
+    industry = info.get("industry", "Unknown")
+    margin = info.get("profitMargins", 0) or 0
+    roe = info.get("returnOnEquity", 0) or 0
+    roa = info.get("returnOnAssets", 0) or 0
+    debt_to_equity = info.get("debtToEquity", 0) or 0
+    rev_growth = info.get("revenueGrowth", 0) or 0
+    earn_growth = info.get("earningsGrowth", 0) or 0
+    pe = info.get("trailingPE")
+    forward_pe = info.get("forwardPE")
+    market_cap = info.get("marketCap", 0) or 0
+    summary_snippet = (info.get("longBusinessSummary") or "")[:400]
+    score = _moat_score(info)
+
+    prompt = f"""You are a senior equity analyst. Write a punchy investment thesis for {name} ({ticker}), a {sector} / {industry} company.
+
+Financials:
+- Net margin: {margin*100:.1f}%  |  ROE: {roe*100:.1f}%  |  ROA: {roa*100:.1f}%
+- Debt/equity: {debt_to_equity:.0f}  |  Rev growth YoY: {rev_growth*100:.1f}%  |  EPS growth YoY: {earn_growth*100:.1f}%
+- Trailing P/E: {f"{pe:.1f}x" if pe else "N/A"}  |  Forward P/E: {f"{forward_pe:.1f}x" if forward_pe else "N/A"}
+- Market cap: ${market_cap/1e9:.1f}B
+- Business: {summary_snippet}
+
+Respond ONLY with valid JSON (no markdown):
+{{
+  "bull_thesis": ["<bull point 1>", "<bull point 2>", "<bull point 3>", "<bull point 4>"],
+  "bear_thesis": ["<bear point 1>", "<bear point 2>", "<bear point 3>"],
+  "ai_summary": "<2-3 sentence verdict: what makes this company investable or not, and at what price>"
+}}
+
+Rules:
+- Be specific to this company — no generic phrases like "brand recognition" or "competitive pressure"
+- Each bullet max 12 words, factual and direct
+- Bull thesis: mix of durable advantages and near-term catalysts
+- Bear thesis: concrete risks tied to the financials above
+- ai_summary must mention moat score {score}/10"""
+
+    msg = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=600,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    data = json.loads(msg.content[0].text)
+    return MoatAnalysis(ticker=ticker, moat_score=score, **data)
+
+
+def _computed_moat(ticker: str, info: dict) -> MoatAnalysis:
+    sector = info.get("sector", "Unknown")
+    industry = info.get("industry", "") or sector
+    margin = info.get("profitMargins", 0) or 0
+    roe = info.get("returnOnEquity", 0) or 0
+    debt_to_equity = info.get("debtToEquity", 0) or 0
+    rev_growth = info.get("revenueGrowth", 0) or 0
+    earn_growth = info.get("earningsGrowth", 0) or 0
+    market_cap = info.get("marketCap", 0) or 0
+    score = _moat_score(info)
+
+    bull: list[str] = []
+    if margin > 0.25:
+        bull.append(f"{margin*100:.0f}% net margins — exceptional pricing power")
+    elif margin > 0.15:
+        bull.append(f"{margin*100:.0f}% net margins outpace most {sector} peers")
+    elif margin > 0.05:
+        bull.append(f"Positive {margin*100:.0f}% margins with room for operating leverage")
+    if roe > 0.20:
+        bull.append(f"ROE of {roe*100:.0f}% — highly efficient capital allocation")
+    elif roe > 0.10:
+        bull.append(f"Solid ROE of {roe*100:.0f}% signals disciplined reinvestment")
+    if market_cap > 100e9:
+        bull.append("Mega-cap scale provides distribution and cost advantages")
+    elif market_cap > 10e9:
+        bull.append("Large-cap position with established market presence")
+    if rev_growth > 0.15:
+        bull.append(f"Revenue growing {rev_growth*100:.0f}% YoY — strong top-line momentum")
+    elif rev_growth > 0.05:
+        bull.append(f"Steady {rev_growth*100:.0f}% revenue growth supports compounding")
+    if earn_growth > 0.15:
+        bull.append(f"Earnings accelerating {earn_growth*100:.0f}% YoY — operating leverage at work")
+    # pad to 4 if needed
+    generic_bull = [
+        f"Established {industry} franchise with recurring demand",
+        "Economies of scale support long-term margin expansion",
+        f"{sector} sector tailwinds provide multi-year runway",
+    ]
+    for g in generic_bull:
+        if len(bull) >= 4:
+            break
+        bull.append(g)
+    bull = bull[:4]
+
+    bear: list[str] = []
+    if debt_to_equity > 150:
+        bear.append(f"High leverage ({debt_to_equity:.0f} D/E) limits flexibility in a downturn")
+    elif debt_to_equity > 80:
+        bear.append(f"Moderate leverage ({debt_to_equity:.0f} D/E) raises rate-sensitivity risk")
+    if rev_growth < 0:
+        bear.append(f"Revenue contracting {abs(rev_growth)*100:.0f}% YoY — top-line deterioration")
+    elif rev_growth < 0.03:
+        bear.append("Near-zero revenue growth risks multiple compression")
+    if earn_growth < -0.10:
+        bear.append(f"Earnings declining {abs(earn_growth)*100:.0f}% YoY — profitability under pressure")
+    generic_bear = [
+        f"Competition intensifying across {industry} from peers and new entrants",
+        "Macro slowdown could compress margins faster than consensus expects",
+        "Regulatory or geopolitical risk inherent to the sector",
+    ]
+    for g in generic_bear:
+        if len(bear) >= 3:
+            break
+        bear.append(g)
+    bear = bear[:3]
 
     return MoatAnalysis(
         ticker=ticker,
-        moat_score=moat_score,
-        competitive_advantages=[
-            "Brand recognition in " + sector,
-            "Established distribution network",
-            "Economies of scale",
-        ],
-        risks=[
-            "Competitive pressure from peers",
-            "Macroeconomic sensitivity",
-            "Regulatory and compliance risk",
-        ],
-        growth_drivers=[
-            "Market expansion opportunities",
-            "Product innovation pipeline",
-            "Margin improvement potential",
-        ],
+        moat_score=score,
+        bull_thesis=bull,
+        bear_thesis=bear,
         ai_summary=(
-            f"{ticker} operates in the {sector} sector with a moat score of {moat_score}/10 "
-            f"based on profitability signals. Full AI narrative unlocks when ANTHROPIC_API_KEY is configured."
+            f"{ticker} ({sector}) earns a moat score of {score}/10 on "
+            f"{'strong' if margin > 0.20 else 'moderate'} profitability "
+            f"({margin*100:.0f}% net margins, ROE {roe*100:.0f}%). "
+            f"{'Revenue momentum is solid.' if rev_growth > 0.10 else 'Growth is steady.' if rev_growth > 0 else 'Revenue is under pressure.'} "
+            f"Add ANTHROPIC_API_KEY for a company-specific AI thesis."
         ),
     )
 

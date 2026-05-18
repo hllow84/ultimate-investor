@@ -6,6 +6,7 @@ import type {
   YoYFinancials,
   MoatAnalysis,
   SentimentResult,
+  TechnicalMomentum,
   WatchlistItem,
   Alert,
 } from "@/types";
@@ -45,6 +46,7 @@ export const api = {
     financials: (ticker: string) => get<YoYFinancials>(`/analysis/${ticker}/financials`),
     moat: (ticker: string) => get<MoatAnalysis>(`/analysis/${ticker}/moat`),
     sentiment: (ticker: string) => get<SentimentResult>(`/analysis/${ticker}/sentiment`),
+    momentum: (ticker: string) => get<TechnicalMomentum>(`/analysis/${ticker}/momentum`),
   },
   watchlist: {
     list: () => get<WatchlistItem[]>(`/watchlist/`),

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Search, TrendingUp, Bell, Star } from "lucide-react";
+import { Search, TrendingUp, Bell, Star, BarChart2 } from "lucide-react";
 
 export default function Navbar() {
   const [query, setQuery] = useState("");
@@ -43,6 +43,9 @@ export default function Navbar() {
       </form>
 
       <div className="flex items-center gap-4 ml-auto">
+        <Link to="/compare" className="flex items-center gap-1.5 text-sm" style={{ color: "var(--muted)" }}>
+          <BarChart2 size={16} /> Compare
+        </Link>
         <Link to="/watchlist" className="flex items-center gap-1.5 text-sm" style={{ color: "var(--muted)" }}>
           <Star size={16} /> Watchlist
         </Link>
