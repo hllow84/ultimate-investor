@@ -6,7 +6,7 @@ long legs one strike further OTM, 30-45 DTE, for a curated list of liquid ticker
 """
 import logging
 import math
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 import yfinance as yf
@@ -186,6 +186,106 @@ def _build_spreads(sym: str, S: float, expiry: str, dte: int, chain) -> list[dic
 
 
 # ---------------------------------------------------------------------------
+# Upcoming event detection
+# ---------------------------------------------------------------------------
+
+# 2026 FOMC meeting end dates (second day = decision day)
+_FOMC_2026 = [
+    date(2026, 1, 29), date(2026, 3, 19), date(2026, 5, 7),
+    date(2026, 6, 18), date(2026, 7, 30), date(2026, 9, 17),
+    date(2026, 10, 29), date(2026, 12, 10),
+]
+
+# 2026 BLS CPI release dates (approx — BLS announces annually)
+_CPI_2026 = [
+    date(2026, 1, 15), date(2026, 2, 12), date(2026, 3, 12),
+    date(2026, 4, 10), date(2026, 5, 13), date(2026, 6, 11),
+    date(2026, 7, 15), date(2026, 8, 12), date(2026, 9, 11),
+    date(2026, 10, 13), date(2026, 11, 12), date(2026, 12, 11),
+]
+
+# 2026 Non-Farm Payrolls (first Friday of each month)
+_NFP_2026 = [
+    date(2026, 1, 9), date(2026, 2, 6), date(2026, 3, 6),
+    date(2026, 4, 3), date(2026, 5, 1), date(2026, 6, 5),
+    date(2026, 7, 10), date(2026, 8, 7), date(2026, 9, 4),
+    date(2026, 10, 2), date(2026, 11, 6), date(2026, 12, 4),
+]
+
+
+def _macro_events(window_days: int) -> list[dict]:
+    """FOMC, CPI, NFP dates within the next `window_days` calendar days."""
+    today = date.today()
+    cutoff = today + timedelta(days=window_days)
+    events = []
+    for d, typ, label in (
+        *((d, "fomc", "FOMC") for d in _FOMC_2026),
+        *((d, "cpi",  "CPI")  for d in _CPI_2026),
+        *((d, "nfp",  "NFP")  for d in _NFP_2026),
+    ):
+        if today <= d <= cutoff:
+            events.append({"type": typ, "date": d.isoformat(),
+                           "label": label, "days_away": (d - today).days})
+    return events
+
+
+def _to_date(val) -> Optional[date]:
+    """Coerce a yfinance calendar value to a Python date."""
+    if val is None:
+        return None
+    # Check datetime before date — datetime is a subclass of date
+    if isinstance(val, datetime):
+        return val.date()
+    if isinstance(val, date):          # plain datetime.date (no .date() method)
+        return val
+    if hasattr(val, "date"):           # pandas Timestamp
+        return val.date()
+    if isinstance(val, str):
+        try:
+            return datetime.strptime(val[:10], "%Y-%m-%d").date()
+        except ValueError:
+            return None
+    return None
+
+
+def _stock_events(ticker_obj, window_days: int) -> list[dict]:
+    """Earnings and ex-dividend events for one ticker within `window_days`."""
+    today = date.today()
+    cutoff = today + timedelta(days=window_days)
+    events: list[dict] = []
+    try:
+        cal = ticker_obj.calendar
+        if cal is None:
+            return events
+
+        # yfinance returns a DataFrame (newer) or dict (older)
+        if hasattr(cal, "to_dict"):
+            # DataFrame — transpose so keys are column names
+            cal = cal.iloc[0].to_dict() if not cal.empty else {}
+
+        # Earnings date
+        raw_ed = cal.get("Earnings Date")
+        if raw_ed is not None:
+            # Can be a list [low, high] or a scalar
+            ed = _to_date(raw_ed[0] if isinstance(raw_ed, (list, tuple)) else raw_ed)
+            if ed and today <= ed <= cutoff:
+                events.append({"type": "earnings", "date": ed.isoformat(),
+                               "label": "Earnings", "days_away": (ed - today).days})
+
+        # Ex-dividend date
+        raw_xd = cal.get("Ex-Dividend Date")
+        if raw_xd is not None:
+            xd = _to_date(raw_xd)
+            if xd and today <= xd <= cutoff:
+                events.append({"type": "exdiv", "date": xd.isoformat(),
+                               "label": "Ex-Div", "days_away": (xd - today).days})
+
+    except Exception as e:
+        log.debug("Event fetch failed: %s", e)
+    return events
+
+
+# ---------------------------------------------------------------------------
 # VIX fetch
 # ---------------------------------------------------------------------------
 
@@ -253,6 +353,9 @@ def scan_credit_spreads(force_refresh: bool = False) -> dict:
     vix = get_vix()
     all_spreads: list[dict] = []
 
+    # Macro events are the same for every ticker — compute once
+    macro = _macro_events(window_days=50)
+
     for sym in CURATED_TICKERS:
         try:
             ticker = yf.Ticker(sym)
@@ -271,8 +374,18 @@ def scan_credit_spreads(force_refresh: bool = False) -> dict:
 
             chain = ticker.option_chain(expiry)
             spreads = _build_spreads(sym, S, expiry, dte, chain)
+
+            # Collect events within the spread's lifetime (DTE + 2-day buffer)
+            window = dte + 2
+            stock_evts = _stock_events(ticker, window)
+            macro_evts = [e for e in macro if e["days_away"] <= window]
+            all_evts = sorted(stock_evts + macro_evts, key=lambda x: x["days_away"])
+
+            for s in spreads:
+                s["events"] = all_evts
+
             all_spreads.extend(spreads)
-            log.info("%s: found %d spread(s)", sym, len(spreads))
+            log.info("%s: found %d spread(s), %d event(s)", sym, len(spreads), len(all_evts))
 
         except Exception as e:
             log.warning("Skipping %s: %s", sym, e)

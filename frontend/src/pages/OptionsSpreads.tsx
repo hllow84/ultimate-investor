@@ -3,6 +3,13 @@ import { useQuery } from "@tanstack/react-query";
 import { RefreshCw, TrendingDown, TrendingUp, AlertTriangle, Info } from "lucide-react";
 import { Link } from "react-router-dom";
 
+interface SpreadEvent {
+  type: "earnings" | "fomc" | "cpi" | "nfp" | "exdiv";
+  date: string;
+  label: string;
+  days_away: number;
+}
+
 interface Spread {
   ticker: string;
   strategy: string;
@@ -19,6 +26,7 @@ interface Spread {
   breakeven: number;
   short_bid: number;
   iv_pct: number;
+  events: SpreadEvent[];
 }
 
 interface VixInfo {
@@ -97,6 +105,39 @@ function SummaryCard({ count, puts, calls }: { count: number; puts: number; call
   );
 }
 
+const EVENT_STYLES: Record<string, { bg: string; color: string }> = {
+  earnings: { bg: "#ef444422", color: "#ef4444" },
+  fomc:     { bg: "#f9731622", color: "#f97316" },
+  cpi:      { bg: "#3b82f622", color: "#3b82f6" },
+  nfp:      { bg: "#8b5cf622", color: "#8b5cf6" },
+  exdiv:    { bg: "#22c55e22", color: "#22c55e" },
+};
+
+function EventBadge({ ev }: { ev: SpreadEvent }) {
+  const style = EVENT_STYLES[ev.type] ?? { bg: "#64748b22", color: "#64748b" };
+  const mmdd = ev.date.slice(5).replace("-", "/");
+  return (
+    <span
+      title={`${ev.label} on ${ev.date} (${ev.days_away}d away)`}
+      className="inline-flex items-center gap-0.5 text-xs font-semibold px-1.5 py-0.5 rounded whitespace-nowrap"
+      style={{ backgroundColor: style.bg, color: style.color }}
+    >
+      {ev.label} <span style={{ opacity: 0.7 }}>{mmdd}</span>
+    </span>
+  );
+}
+
+function EventsCell({ events }: { events: SpreadEvent[] }) {
+  if (!events || events.length === 0) {
+    return <span style={{ color: "var(--muted)" }}>—</span>;
+  }
+  return (
+    <div className="flex flex-col gap-1">
+      {events.map((ev, i) => <EventBadge key={i} ev={ev} />)}
+    </div>
+  );
+}
+
 function SpreadRow({ s }: { s: Spread }) {
   const isPut = s.strategy.includes("Put");
   const stratColor = isPut ? "var(--green)" : "var(--red)";
@@ -148,6 +189,9 @@ function SpreadRow({ s }: { s: Spread }) {
       </td>
       <td className="py-3 px-3 text-sm text-right" style={{ color: "var(--muted)" }}>
         {s.iv_pct > 0 ? `${s.iv_pct}%` : "—"}
+      </td>
+      <td className="py-3 px-3 text-sm text-right">
+        <EventsCell events={s.events ?? []} />
       </td>
     </tr>
   );
@@ -314,6 +358,7 @@ export default function OptionsSpreads() {
                   [null, "Breakeven"],
                   ["dte", "DTE"],
                   [null, "IV"],
+                  [null, "Events (30d)"],
                 ].map(([key, label], i) => (
                   <th
                     key={i}
@@ -364,6 +409,8 @@ export default function OptionsSpreads() {
           <span><b>Breakeven</b> — stock price at which the spread breaks even at expiry</span>
           <span><b>Delta ~0.10</b> — short leg has ~10% probability of expiring in-the-money</span>
           <span><b>Bull Put</b> — profits if stock stays above short strike · <b>Bear Call</b> — profits if stock stays below short strike</span>
+          <span><b style={{color:"#ef4444"}}>Earnings</b> — IV typically spikes into earnings then collapses; avoid unless intentional</span>
+          <span><b style={{color:"#f97316"}}>FOMC</b> market-wide · <b style={{color:"#3b82f6"}}>CPI</b> inflation data · <b style={{color:"#8b5cf6"}}>NFP</b> jobs report · <b style={{color:"#22c55e"}}>Ex-Div</b> dividend date</span>
         </div>
       </div>
     </div>
