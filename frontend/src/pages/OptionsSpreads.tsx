@@ -247,16 +247,22 @@ function SpreadRows({ s, expanded, onToggle }: {
           </p>
         </td>
 
-        {/* ±Move IV / HV30 */}
+        {/* ±1σ standard deviation over DTE */}
         <td className="py-3 px-2 text-sm text-right">
           {s.exp_move_pct > 0 ? (
             <>
+              {/* IV-implied 1σ */}
               <span style={{ color: "var(--text)" }}>±{s.exp_move_pct.toFixed(1)}%</span>
-              <span className="ml-1 text-xs" style={{ color: "var(--muted)" }}>IV</span>
+              <span className="ml-1 text-xs" style={{ color: "var(--muted)" }}>
+                (IV {s.iv_pct}%)
+              </span>
+              {/* HV30-realized 1σ */}
               {s.hv30_move_pct > 0 && (
                 <p className="text-xs mt-0.5">
                   <span style={{ color: "var(--muted)" }}>±{s.hv30_move_pct.toFixed(1)}%</span>
-                  <span className="ml-1" style={{ color: "var(--muted)" }}>HV30</span>
+                  <span className="ml-1" style={{ color: "var(--muted)" }}>
+                    (HV30 {s.hv30_pct}%)
+                  </span>
                   {ivVsHv && (
                     <span className="ml-1 font-semibold" style={{ color: ivVsHv.color }}>{ivVsHv.label}</span>
                   )}
@@ -478,7 +484,7 @@ export default function OptionsSpreads() {
                   [null, "Max Risk"],
                   ["roi_pct", "ROI %"],
                   [null, "Buffer %"],
-                  ["exp_move_pct", "±Move (IV / HV30)"],
+                  ["exp_move_pct", "±1σ (IV vs HV30)"],
                   ["dte", "DTE"],
                   [null, "IV"],
                   [null, "Events (30d)"],
@@ -526,8 +532,9 @@ export default function OptionsSpreads() {
           <span><b style={{ color: "var(--text)" }}>ROI %</b> — net credit ÷ max risk · return on capital at risk</span>
           <span><b style={{ color: "var(--text)" }}>Buffer %</b> — how far stock must move before you lose money (be = breakeven price)</span>
           <span>Buffer color: <b style={{ color: "var(--green)" }}>green</b> = buffer &gt; 1.2× exp move · <b style={{ color: "var(--yellow)" }}>yellow</b> = close · <b style={{ color: "var(--red)" }}>red</b> = inside exp move range</span>
-          <span><b style={{ color: "var(--text)" }}>±Move IV</b> — implied vol × √(DTE/365): forward market-priced range (what options are pricing in)</span>
-          <span><b style={{ color: "var(--text)" }}>±Move HV30</b> — realized std dev of past 30 days of price returns × √(DTE/365): what the stock <i>actually</i> moved</span>
+          <span><b style={{ color: "var(--text)" }}>±1σ</b> = <b>one standard deviation</b> projected over the trade's DTE. Formula: annualised_vol × √(DTE/365). ~68% of outcomes land within this range.</span>
+          <span><b style={{ color: "var(--text)" }}>IV line</b> — implied vol (from options pricing) as the annualised σ, e.g. "±21.1% (IV 68.7%)" means the market prices in a 68.7% annualised vol → ±21.1% 1σ range over 35 days</span>
+          <span><b style={{ color: "var(--text)" }}>HV30 line</b> — realised σ from the past 30 trading days, same projection. Compares what the stock <i>actually</i> did vs what options are pricing in</span>
           <span>
             <b style={{ color: "var(--green)" }}>↑rich</b> — IV &gt; HV30: options overpriced vs history → <b>good to sell premium</b> &nbsp;·&nbsp;
             <b style={{ color: "var(--red)" }}>↓cheap</b> — IV &lt; HV30: options underpriced → sellers earn less than historical vol warrants &nbsp;·&nbsp;
