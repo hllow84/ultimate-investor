@@ -87,8 +87,59 @@ def _find_target_expiry(options_dates: list[str]) -> Optional[str]:
 # Spread building
 # ---------------------------------------------------------------------------
 
+TARGET_WIDTHS = [5, 10, 25, 50, 100]  # spread widths to show in the expander
+
+
+def _width_variant(
+    df, S: float, short_strike: float, short_premium: float,
+    opt_type: str, target_w: float
+) -> Optional[dict]:
+    """Compute one spread-width variant. Returns None if not viable."""
+    if opt_type == "put":
+        target_long = short_strike - target_w
+        long_cands = df[df["strike"] < short_strike].copy()
+    else:
+        target_long = short_strike + target_w
+        long_cands = df[df["strike"] > short_strike].copy()
+
+    if long_cands.empty:
+        return None
+
+    long_cands["_dist"] = (long_cands["strike"] - target_long).abs()
+    long_row = long_cands.loc[long_cands["_dist"].idxmin()]
+    long_strike = float(long_row["strike"])
+    actual_width = round(abs(short_strike - long_strike), 2)
+
+    # Reject if strike didn't get close to the target width
+    if actual_width < target_w * 0.4:
+        return None
+
+    long_premium = _midpoint(long_row)
+    net_credit = short_premium - long_premium
+    if net_credit <= 0 or actual_width <= 0:
+        return None
+
+    max_risk = actual_width - net_credit
+    if max_risk <= 0:
+        return None
+
+    roi = (net_credit / max_risk) * 100.0
+    be = short_strike - net_credit if opt_type == "put" else short_strike + net_credit
+    buffer_pct = round(abs(be - S) / S * 100, 1) if S > 0 else 0.0
+
+    return {
+        "width": actual_width,
+        "long_strike": long_strike,
+        "net_credit": round(net_credit, 2),
+        "max_risk": round(max_risk, 2),
+        "roi_pct": round(roi, 1),
+        "breakeven": round(be, 2),
+        "buffer_pct": buffer_pct,
+    }
+
+
 def _build_spreads(sym: str, S: float, expiry: str, dte: int, chain, hv30_pct: float = 0.0) -> list[dict]:
-    """Scan puts and calls for one ticker/expiry and return valid spreads."""
+    """Return one spread record per direction (put/call) with all width variants."""
     T = dte / 365.0
     results = []
 
@@ -98,7 +149,7 @@ def _build_spreads(sym: str, S: float, expiry: str, dte: int, chain, hv30_pct: f
 
         df = df.copy().reset_index(drop=True)
 
-        # Compute BS delta for each contract
+        # Compute BS delta
         deltas = []
         for _, row in df.iterrows():
             K = float(row["strike"])
@@ -106,73 +157,64 @@ def _build_spreads(sym: str, S: float, expiry: str, dte: int, chain, hv30_pct: f
             deltas.append(_bs_delta(S, K, T, RISK_FREE_RATE, iv, opt_type))
         df["_delta"] = deltas
 
-        # Filter to candidates in the target delta band
+        # Short leg candidates
         if opt_type == "put":
-            # Put deltas are negative; we want abs(delta) in [0.05, 0.25]
             cands = df[(df["_delta"] < -DELTA_RANGE_LOW) & (df["_delta"] > -DELTA_RANGE_HIGH)].copy()
-            cands = cands.sort_values("strike", ascending=False)  # highest strike = most ATM
+            cands = cands.sort_values("strike", ascending=False)
         else:
             cands = df[(df["_delta"] > DELTA_RANGE_LOW) & (df["_delta"] < DELTA_RANGE_HIGH)].copy()
-            cands = cands.sort_values("strike", ascending=True)   # lowest strike = most ATM
+            cands = cands.sort_values("strike", ascending=True)
 
         if cands.empty:
             continue
 
-        # Short leg: closest to TARGET_DELTA
         target_signed = -TARGET_DELTA if opt_type == "put" else TARGET_DELTA
         cands["_diff"] = (cands["_delta"] - target_signed).abs()
         short_row = cands.loc[cands["_diff"].idxmin()]
         short_strike = float(short_row["strike"])
         short_premium = _midpoint(short_row)
         short_bid = float(short_row.get("bid", 0) or 0)
+        # After market hours bid=0; fall back to last traded price so the scanner
+        # still works outside regular trading hours (prices are indicative only)
+        if short_bid < MIN_BID:
+            short_bid = float(short_row.get("lastPrice", 0) or 0)
         short_delta_abs = round(abs(float(short_row["_delta"])), 3)
 
         if short_bid < MIN_BID or short_premium <= 0:
             continue
 
-        # Long leg: next strike further OTM
-        if opt_type == "put":
-            long_cands = df[df["strike"] < short_strike].sort_values("strike", ascending=False)
-        else:
-            long_cands = df[df["strike"] > short_strike].sort_values("strike", ascending=True)
-
-        if long_cands.empty:
-            continue
-
-        long_row = long_cands.iloc[0]
-        long_strike = float(long_row["strike"])
-        long_premium = _midpoint(long_row)
-
-        spread_width = abs(short_strike - long_strike)
-        net_credit = short_premium - long_premium
-
-        if net_credit <= 0 or spread_width <= 0:
-            continue
-
-        max_risk = spread_width - net_credit
-        if max_risk <= 0:
-            continue
-
-        roi = (net_credit / max_risk) * 100.0
-        if roi < MIN_ROI:
-            continue
-
-        strategy = "Bull Put Spread" if opt_type == "put" else "Bear Call Spread"
+        # IV / move metrics (same for all widths — depends on short leg only)
         iv_decimal = float(short_row.get("impliedVolatility", 0) or 0)
         iv_pct = round(iv_decimal * 100, 1)
-        breakeven = (
-            short_strike - net_credit if opt_type == "put"
-            else short_strike + net_credit
-        )
-        # Buffer: how far breakeven is from current price (always positive %)
-        buffer_pct = round(abs(breakeven - S) / S * 100, 1) if S > 0 else 0.0
-        # IV-implied expected move (±1σ) for this DTE — forward-looking
-        exp_move_pct = round(iv_decimal * math.sqrt(dte / 365.0) * 100, 1) if iv_decimal > 0 else 0.0
-        exp_move_dollar = round(S * iv_decimal * math.sqrt(dte / 365.0), 2) if iv_decimal > 0 else 0.0
-        # HV30-based expected move for same DTE — backward-looking (past 30d realized vol)
+        exp_move_pct = round(iv_decimal * math.sqrt(T) * 100, 1) if iv_decimal > 0 else 0.0
+        exp_move_dollar = round(S * iv_decimal * math.sqrt(T), 2) if iv_decimal > 0 else 0.0
         hv30_decimal = hv30_pct / 100.0
-        hv30_move_pct = round(hv30_decimal * math.sqrt(dte / 365.0) * 100, 1) if hv30_pct > 0 else 0.0
-        hv30_move_dollar = round(S * hv30_decimal * math.sqrt(dte / 365.0), 2) if hv30_pct > 0 else 0.0
+        hv30_move_pct = round(hv30_decimal * math.sqrt(T) * 100, 1) if hv30_pct > 0 else 0.0
+        hv30_move_dollar = round(S * hv30_decimal * math.sqrt(T), 2) if hv30_pct > 0 else 0.0
+
+        strategy = "Bull Put Spread" if opt_type == "put" else "Bear Call Spread"
+
+        # Build width variants — deduplicate when strikes snap to the same level
+        widths_list: list[dict] = []
+        seen: set[int] = set()
+        for tw in TARGET_WIDTHS:
+            v = _width_variant(df, S, short_strike, short_premium, opt_type, tw)
+            if v is None:
+                continue
+            key = round(v["width"])
+            if key in seen:
+                continue
+            seen.add(key)
+            widths_list.append(v)
+
+        if not widths_list:
+            continue
+
+        widths_list.sort(key=lambda x: x["width"])
+
+        # Require the narrowest width to meet the minimum ROI threshold
+        if widths_list[0]["roi_pct"] < MIN_ROI:
+            continue
 
         results.append({
             "ticker": sym,
@@ -181,21 +223,16 @@ def _build_spreads(sym: str, S: float, expiry: str, dte: int, chain, hv30_pct: f
             "dte": dte,
             "stock_price": round(S, 2),
             "short_strike": short_strike,
-            "long_strike": long_strike,
             "short_delta": short_delta_abs,
-            "net_credit": round(net_credit, 2),
-            "spread_width": round(spread_width, 2),
-            "max_risk": round(max_risk, 2),
-            "roi_pct": round(roi, 1),
-            "breakeven": round(breakeven, 2),
-            "buffer_pct": buffer_pct,
+            "iv_pct": iv_pct,
+            "hv30_pct": hv30_pct,
             "exp_move_pct": exp_move_pct,
             "exp_move_dollar": exp_move_dollar,
-            "hv30_pct": hv30_pct,
             "hv30_move_pct": hv30_move_pct,
             "hv30_move_dollar": hv30_move_dollar,
             "short_bid": round(short_bid, 2),
-            "iv_pct": iv_pct,
+            "roi_pct": widths_list[0]["roi_pct"],  # narrowest width ROI — used for sorting
+            "widths": widths_list,
         })
 
     return results
@@ -436,6 +473,19 @@ def scan_credit_spreads(force_refresh: bool = False) -> dict:
             log.warning("Skipping %s: %s", sym, e)
 
     all_spreads.sort(key=lambda x: x["roi_pct"], reverse=True)
+
+    # Don't overwrite a good cache with an empty scan (e.g. after-hours bid=0)
+    if not all_spreads and _cache and _cache[0] == today_str:
+        log.warning("Fresh scan returned 0 spreads — keeping existing cache")
+        return {
+            "spreads": _cache[1],
+            "vix": vix,
+            "vix_info": vix_label(vix),
+            "cached": True,
+            "date": today_str,
+            "count": len(_cache[1]),
+        }
+
     _cache = (today_str, all_spreads, vix)
 
     return {
