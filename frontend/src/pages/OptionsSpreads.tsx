@@ -27,6 +27,9 @@ interface Spread {
   buffer_pct: number;
   exp_move_pct: number;
   exp_move_dollar: number;
+  hv30_pct: number;
+  hv30_move_pct: number;
+  hv30_move_dollar: number;
   short_bid: number;
   iv_pct: number;
   events: SpreadEvent[];
@@ -224,12 +227,39 @@ function SpreadRow({ s }: { s: Spread }) {
         </p>
       </td>
 
-      {/* Expected move ±1σ */}
-      <td className="py-3 px-3 text-sm text-right" style={{ color: "var(--muted)" }}>
+      {/* Expected move: IV-implied vs HV30 realized */}
+      <td className="py-3 px-3 text-sm text-right">
         {s.exp_move_pct > 0 ? (
           <>
+            {/* IV-implied (forward-looking) */}
             <span style={{ color: "var(--text)" }}>±{s.exp_move_pct.toFixed(1)}%</span>
-            <p className="text-xs mt-0.5">±${s.exp_move_dollar.toFixed(2)}</p>
+            <span className="ml-1 text-xs" style={{ color: "var(--muted)" }}>IV</span>
+            {/* HV30-realized (past 30 days) */}
+            {s.hv30_move_pct > 0 && (
+              <p className="text-xs mt-0.5">
+                <span style={{ color: "var(--muted)" }}>±{s.hv30_move_pct.toFixed(1)}%</span>
+                <span className="ml-1" style={{ color: "var(--muted)" }}>HV30</span>
+                {/* Rich/cheap signal: IV vs HV30 */}
+                {s.hv30_pct > 0 && (
+                  <span
+                    className="ml-1 font-semibold"
+                    style={{
+                      color: s.iv_pct > s.hv30_pct * 1.1
+                        ? "var(--green)"
+                        : s.iv_pct < s.hv30_pct * 0.9
+                        ? "var(--red)"
+                        : "var(--yellow)",
+                    }}
+                  >
+                    {s.iv_pct > s.hv30_pct * 1.1
+                      ? "↑rich"
+                      : s.iv_pct < s.hv30_pct * 0.9
+                      ? "↓cheap"
+                      : "≈fair"}
+                  </span>
+                )}
+              </p>
+            )}
           </>
         ) : "—"}
       </td>
@@ -413,7 +443,7 @@ export default function OptionsSpreads() {
                   ["max_risk", "Max Risk"],
                   ["roi_pct", "ROI %"],
                   ["buffer_pct", "Buffer %"],
-                  [null, "Exp. Move ±1σ"],
+                  [null, "±Move (IV / HV30)"],
                   ["dte", "DTE"],
                   [null, "IV"],
                   [null, "Events (30d)"],
@@ -465,7 +495,8 @@ export default function OptionsSpreads() {
           <span><b>Max Risk</b> — spread width − net credit (worst case loss per share)</span>
           <span><b>ROI %</b> — net credit ÷ max risk (return on capital at risk)</span>
           <span><b>Buffer %</b> — how far the stock must move before you lose money (be = breakeven price). Green = buffer &gt; exp. move; yellow = close; red = inside</span>
-          <span><b>Exp. Move ±1σ</b> — IV × √(DTE/365) × price: market-implied ±1 std dev range. ~68% of outcomes land inside</span>
+          <span><b>±Move IV</b> — implied volatility × √(DTE/365): forward-looking market-priced range · <b>HV30</b> — realized std dev of past 30d returns × √(DTE/365): what actually happened</span>
+          <span><b style={{color:"var(--green)"}}>↑rich</b> = IV &gt; HV30 (options expensive → good for sellers) · <b style={{color:"var(--red)"}}>↓cheap</b> = IV &lt; HV30 · <b style={{color:"var(--yellow)"}}>≈fair</b> = roughly equal</span>
           <span><b>Delta ~0.10</b> — short leg has ~10% probability of expiring in-the-money</span>
           <span><b>Bull Put</b> — profits if stock stays above short strike · <b>Bear Call</b> — profits if stock stays below short strike</span>
           <span><b style={{color:"#ef4444"}}>Earnings</b> — IV typically spikes into earnings then collapses; avoid unless intentional</span>

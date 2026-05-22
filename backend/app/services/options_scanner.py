@@ -87,7 +87,7 @@ def _find_target_expiry(options_dates: list[str]) -> Optional[str]:
 # Spread building
 # ---------------------------------------------------------------------------
 
-def _build_spreads(sym: str, S: float, expiry: str, dte: int, chain) -> list[dict]:
+def _build_spreads(sym: str, S: float, expiry: str, dte: int, chain, hv30_pct: float = 0.0) -> list[dict]:
     """Scan puts and calls for one ticker/expiry and return valid spreads."""
     T = dte / 365.0
     results = []
@@ -166,9 +166,13 @@ def _build_spreads(sym: str, S: float, expiry: str, dte: int, chain) -> list[dic
         )
         # Buffer: how far breakeven is from current price (always positive %)
         buffer_pct = round(abs(breakeven - S) / S * 100, 1) if S > 0 else 0.0
-        # Expected move (±1σ) derived from IV over DTE — what the market is pricing in
+        # IV-implied expected move (±1σ) for this DTE — forward-looking
         exp_move_pct = round(iv_decimal * math.sqrt(dte / 365.0) * 100, 1) if iv_decimal > 0 else 0.0
         exp_move_dollar = round(S * iv_decimal * math.sqrt(dte / 365.0), 2) if iv_decimal > 0 else 0.0
+        # HV30-based expected move for same DTE — backward-looking (past 30d realized vol)
+        hv30_decimal = hv30_pct / 100.0
+        hv30_move_pct = round(hv30_decimal * math.sqrt(dte / 365.0) * 100, 1) if hv30_pct > 0 else 0.0
+        hv30_move_dollar = round(S * hv30_decimal * math.sqrt(dte / 365.0), 2) if hv30_pct > 0 else 0.0
 
         results.append({
             "ticker": sym,
@@ -187,6 +191,9 @@ def _build_spreads(sym: str, S: float, expiry: str, dte: int, chain) -> list[dic
             "buffer_pct": buffer_pct,
             "exp_move_pct": exp_move_pct,
             "exp_move_dollar": exp_move_dollar,
+            "hv30_pct": hv30_pct,
+            "hv30_move_pct": hv30_move_pct,
+            "hv30_move_dollar": hv30_move_dollar,
             "short_bid": round(short_bid, 2),
             "iv_pct": iv_pct,
         })
@@ -295,6 +302,34 @@ def _stock_events(ticker_obj, window_days: int) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# 30-day Historical Volatility
+# ---------------------------------------------------------------------------
+
+def _compute_hv30(ticker_obj) -> float:
+    """
+    Annualised 30-day Historical Volatility (%).
+    Uses close-to-close log returns over the last ~45 calendar days
+    (≈ 30 trading days), then annualises: σ_daily × √252 × 100.
+    Returns 0.0 on failure.
+    """
+    try:
+        hist = ticker_obj.history(period="45d")
+        closes = hist["Close"].dropna().tolist()
+        if len(closes) < 10:
+            return 0.0
+        log_returns = [math.log(closes[i] / closes[i - 1]) for i in range(1, len(closes))]
+        n = len(log_returns)
+        if n < 2:
+            return 0.0
+        mean = sum(log_returns) / n
+        variance = sum((x - mean) ** 2 for x in log_returns) / (n - 1)
+        return round(math.sqrt(variance) * math.sqrt(252) * 100, 1)
+    except Exception as e:
+        log.debug("HV30 failed: %s", e)
+        return 0.0
+
+
+# ---------------------------------------------------------------------------
 # VIX fetch
 # ---------------------------------------------------------------------------
 
@@ -382,7 +417,8 @@ def scan_credit_spreads(force_refresh: bool = False) -> dict:
             dte = (expiry_date - date.today()).days
 
             chain = ticker.option_chain(expiry)
-            spreads = _build_spreads(sym, S, expiry, dte, chain)
+            hv30 = _compute_hv30(ticker)
+            spreads = _build_spreads(sym, S, expiry, dte, chain, hv30)
 
             # Collect events within the spread's lifetime (DTE + 2-day buffer)
             window = dte + 2
