@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-from app.routers import stocks, analysis, watchlist, alerts
+from app.routers import stocks, analysis, watchlist, alerts, options
 from app.db.database import engine, SessionLocal
 from app.db import models
 
@@ -37,18 +37,36 @@ async def _alert_checker_loop() -> None:
         await asyncio.sleep(CHECK_INTERVAL_SECONDS)
 
 
+async def _options_precompute() -> None:
+    """Pre-warm the options spread cache shortly after startup, then refresh every 8 hours."""
+    from app.services.options_scanner import scan_credit_spreads
+    await asyncio.sleep(30)  # let the server fully start first
+    while True:
+        try:
+            log.info("Options scanner: starting daily scan...")
+            result = await asyncio.to_thread(scan_credit_spreads)
+            log.info("Options scanner: done — %d spread(s) cached for %s", result["count"], result["date"])
+        except Exception:
+            log.exception("Options scanner error")
+        await asyncio.sleep(8 * 3600)  # refresh every 8 hours
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     models.Base.metadata.create_all(bind=engine)
     _migrate()
-    task = asyncio.create_task(_alert_checker_loop())
+    alert_task = asyncio.create_task(_alert_checker_loop())
+    options_task = asyncio.create_task(_options_precompute())
     log.info("Alert checker started (interval: %ds)", CHECK_INTERVAL_SECONDS)
+    log.info("Options scanner pre-compute scheduled (30s after startup)")
     yield
-    task.cancel()
-    try:
-        await task
-    except asyncio.CancelledError:
-        pass
+    alert_task.cancel()
+    options_task.cancel()
+    for t in (alert_task, options_task):
+        try:
+            await t
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(
@@ -70,6 +88,7 @@ app.include_router(stocks.router,    prefix="/api/stocks",    tags=["stocks"])
 app.include_router(analysis.router,  prefix="/api/analysis",  tags=["analysis"])
 app.include_router(watchlist.router, prefix="/api/watchlist", tags=["watchlist"])
 app.include_router(alerts.router,    prefix="/api/alerts",    tags=["alerts"])
+app.include_router(options.router,   prefix="/api/options",   tags=["options"])
 
 
 @app.get("/")

@@ -5,6 +5,7 @@ import StockDetail from "@/pages/StockDetail";
 import Watchlist from "@/pages/Watchlist";
 import Alerts from "@/pages/Alerts";
 import Compare from "@/pages/Compare";
+import OptionsSpreads from "@/pages/OptionsSpreads";
 
 export default function App() {
   return (
@@ -17,6 +18,7 @@ export default function App() {
           <Route path="/watchlist" element={<Watchlist />} />
           <Route path="/alerts" element={<Alerts />} />
           <Route path="/compare" element={<Compare />} />
+          <Route path="/options" element={<OptionsSpreads />} />
         </Routes>
       </main>
     </div>
