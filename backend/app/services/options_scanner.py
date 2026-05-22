@@ -158,11 +158,17 @@ def _build_spreads(sym: str, S: float, expiry: str, dte: int, chain) -> list[dic
             continue
 
         strategy = "Bull Put Spread" if opt_type == "put" else "Bear Call Spread"
-        iv_pct = round(float(short_row.get("impliedVolatility", 0) or 0) * 100, 1)
+        iv_decimal = float(short_row.get("impliedVolatility", 0) or 0)
+        iv_pct = round(iv_decimal * 100, 1)
         breakeven = (
             short_strike - net_credit if opt_type == "put"
             else short_strike + net_credit
         )
+        # Buffer: how far breakeven is from current price (always positive %)
+        buffer_pct = round(abs(breakeven - S) / S * 100, 1) if S > 0 else 0.0
+        # Expected move (±1σ) derived from IV over DTE — what the market is pricing in
+        exp_move_pct = round(iv_decimal * math.sqrt(dte / 365.0) * 100, 1) if iv_decimal > 0 else 0.0
+        exp_move_dollar = round(S * iv_decimal * math.sqrt(dte / 365.0), 2) if iv_decimal > 0 else 0.0
 
         results.append({
             "ticker": sym,
@@ -178,6 +184,9 @@ def _build_spreads(sym: str, S: float, expiry: str, dte: int, chain) -> list[dic
             "max_risk": round(max_risk, 2),
             "roi_pct": round(roi, 1),
             "breakeven": round(breakeven, 2),
+            "buffer_pct": buffer_pct,
+            "exp_move_pct": exp_move_pct,
+            "exp_move_dollar": exp_move_dollar,
             "short_bid": round(short_bid, 2),
             "iv_pct": iv_pct,
         })

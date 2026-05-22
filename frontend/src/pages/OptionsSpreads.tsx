@@ -24,6 +24,9 @@ interface Spread {
   max_risk: number;
   roi_pct: number;
   breakeven: number;
+  buffer_pct: number;
+  exp_move_pct: number;
+  exp_move_dollar: number;
   short_bid: number;
   iv_pct: number;
   events: SpreadEvent[];
@@ -142,8 +145,21 @@ function SpreadRow({ s }: { s: Spread }) {
   const isPut = s.strategy.includes("Put");
   const stratColor = isPut ? "var(--green)" : "var(--red)";
 
+  // Buffer vs expected move: green = safely outside 1σ, yellow = close, red = inside
+  const bufferColor =
+    s.exp_move_pct > 0
+      ? s.buffer_pct >= s.exp_move_pct * 1.2
+        ? "var(--green)"
+        : s.buffer_pct >= s.exp_move_pct * 0.8
+        ? "var(--yellow)"
+        : "var(--red)"
+      : "var(--text)";
+
+  const bufferArrow = isPut ? "↓" : "↑";
+
   return (
     <tr style={{ borderBottom: "1px solid var(--border)" }}>
+      {/* Ticker */}
       <td className="py-3 px-3">
         <Link
           to={`/stock/${s.ticker}`}
@@ -152,8 +168,9 @@ function SpreadRow({ s }: { s: Spread }) {
         >
           {s.ticker}
         </Link>
-        <p className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>${s.stock_price}</p>
       </td>
+
+      {/* Strategy */}
       <td className="py-3 px-3">
         <span
           className="text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
@@ -162,34 +179,73 @@ function SpreadRow({ s }: { s: Spread }) {
           {isPut ? "↑ Bull Put" : "↓ Bear Call"}
         </span>
       </td>
+
+      {/* Current price */}
+      <td className="py-3 px-3 text-sm text-right font-medium" style={{ color: "var(--text)" }}>
+        ${s.stock_price.toLocaleString()}
+      </td>
+
+      {/* Strikes / delta */}
       <td className="py-3 px-3 text-sm text-right">
         <span style={{ color: "var(--text)" }}>{s.short_strike}</span>
         <span className="mx-1" style={{ color: "var(--muted)" }}>/</span>
         <span style={{ color: "var(--muted)" }}>{s.long_strike}</span>
         <p className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>Δ {s.short_delta}</p>
       </td>
+
+      {/* Net credit */}
       <td className="py-3 px-3 text-sm text-right">
         <span style={{ color: "var(--green)" }}>${s.net_credit.toFixed(2)}</span>
         <p className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>${s.spread_width} wide</p>
       </td>
+
+      {/* Max risk */}
       <td className="py-3 px-3 text-sm text-right">
         <span style={{ color: "var(--red)" }}>${s.max_risk.toFixed(2)}</span>
       </td>
+
+      {/* ROI % */}
       <td className="py-3 px-3 text-sm text-right font-semibold">
         <span style={{ color: s.roi_pct >= 15 ? "var(--green)" : "var(--text)" }}>
           {s.roi_pct.toFixed(1)}%
         </span>
       </td>
-      <td className="py-3 px-3 text-sm text-right">
-        <span style={{ color: "var(--text)" }}>{s.breakeven.toFixed(2)}</span>
+
+      {/* Buffer % — how far breakeven is from current price */}
+      <td
+        className="py-3 px-3 text-sm text-right font-semibold"
+        title={`Breakeven: $${s.breakeven.toFixed(2)}`}
+      >
+        <span style={{ color: bufferColor }}>
+          {bufferArrow} {s.buffer_pct.toFixed(1)}%
+        </span>
+        <p className="text-xs mt-0.5 font-normal" style={{ color: "var(--muted)" }}>
+          be ${s.breakeven.toFixed(2)}
+        </p>
       </td>
+
+      {/* Expected move ±1σ */}
+      <td className="py-3 px-3 text-sm text-right" style={{ color: "var(--muted)" }}>
+        {s.exp_move_pct > 0 ? (
+          <>
+            <span style={{ color: "var(--text)" }}>±{s.exp_move_pct.toFixed(1)}%</span>
+            <p className="text-xs mt-0.5">±${s.exp_move_dollar.toFixed(2)}</p>
+          </>
+        ) : "—"}
+      </td>
+
+      {/* DTE */}
       <td className="py-3 px-3 text-sm text-right">
         <span style={{ color: "var(--text)" }}>{s.dte}d</span>
         <p className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>{s.expiry}</p>
       </td>
+
+      {/* IV */}
       <td className="py-3 px-3 text-sm text-right" style={{ color: "var(--muted)" }}>
         {s.iv_pct > 0 ? `${s.iv_pct}%` : "—"}
       </td>
+
+      {/* Events */}
       <td className="py-3 px-3 text-sm text-right">
         <EventsCell events={s.events ?? []} />
       </td>
@@ -198,7 +254,7 @@ function SpreadRow({ s }: { s: Spread }) {
 }
 
 type FilterType = "all" | "put" | "call";
-type SortKey = "roi_pct" | "ticker" | "dte" | "net_credit" | "max_risk";
+type SortKey = "roi_pct" | "ticker" | "dte" | "net_credit" | "max_risk" | "buffer_pct";
 
 export default function OptionsSpreads() {
   const [filterType, setFilterType] = useState<FilterType>("all");
@@ -345,17 +401,19 @@ export default function OptionsSpreads() {
           className="rounded-xl overflow-auto"
           style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)" }}
         >
-          <table className="w-full text-sm min-w-[800px]">
+          <table className="w-full text-sm min-w-[1050px]">
             <thead>
               <tr style={{ borderBottom: "1px solid var(--border)" }}>
                 {[
                   ["ticker", "Ticker"],
                   [null, "Strategy"],
-                  [null, "Strikes / Delta"],
+                  [null, "Price"],
+                  [null, "Strikes / Δ"],
                   ["net_credit", "Net Credit"],
                   ["max_risk", "Max Risk"],
                   ["roi_pct", "ROI %"],
-                  [null, "Breakeven"],
+                  ["buffer_pct", "Buffer %"],
+                  [null, "Exp. Move ±1σ"],
                   ["dte", "DTE"],
                   [null, "IV"],
                   [null, "Events (30d)"],
@@ -406,7 +464,8 @@ export default function OptionsSpreads() {
           <span><b>Net Credit</b> — premium collected per share (×100 per contract)</span>
           <span><b>Max Risk</b> — spread width − net credit (worst case loss per share)</span>
           <span><b>ROI %</b> — net credit ÷ max risk (return on capital at risk)</span>
-          <span><b>Breakeven</b> — stock price at which the spread breaks even at expiry</span>
+          <span><b>Buffer %</b> — how far the stock must move before you lose money (be = breakeven price). Green = buffer &gt; exp. move; yellow = close; red = inside</span>
+          <span><b>Exp. Move ±1σ</b> — IV × √(DTE/365) × price: market-implied ±1 std dev range. ~68% of outcomes land inside</span>
           <span><b>Delta ~0.10</b> — short leg has ~10% probability of expiring in-the-money</span>
           <span><b>Bull Put</b> — profits if stock stays above short strike · <b>Bear Call</b> — profits if stock stays below short strike</span>
           <span><b style={{color:"#ef4444"}}>Earnings</b> — IV typically spikes into earnings then collapses; avoid unless intentional</span>
