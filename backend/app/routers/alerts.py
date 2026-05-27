@@ -1,21 +1,36 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+
 from app.db.database import get_db
-from app.db.models import Alert as AlertRow
+from app.db.models import Alert as AlertRow, User
 from app.models.schemas import Alert
+from app.services.auth_service import get_current_user
 
 router = APIRouter()
 
 
 @router.get("/", response_model=list[Alert])
-def get_alerts(db: Session = Depends(get_db)):
-    rows = db.query(AlertRow).order_by(AlertRow.id.desc()).all()
+def get_alerts(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    rows = (
+        db.query(AlertRow)
+        .filter(AlertRow.user_id == current_user.id)
+        .order_by(AlertRow.id.desc())
+        .all()
+    )
     return [_to_schema(r) for r in rows]
 
 
 @router.post("/", response_model=Alert)
-def create_alert(alert: Alert, db: Session = Depends(get_db)):
+def create_alert(
+    alert: Alert,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     row = AlertRow(
+        user_id=current_user.id,
         ticker=alert.ticker.upper(),
         alert_type=alert.alert_type,
         threshold=alert.threshold,
@@ -29,8 +44,16 @@ def create_alert(alert: Alert, db: Session = Depends(get_db)):
 
 
 @router.patch("/{alert_id}/toggle", response_model=Alert)
-def toggle_alert(alert_id: int, db: Session = Depends(get_db)):
-    row = db.query(AlertRow).filter(AlertRow.id == alert_id).first()
+def toggle_alert(
+    alert_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    row = (
+        db.query(AlertRow)
+        .filter(AlertRow.id == alert_id, AlertRow.user_id == current_user.id)
+        .first()
+    )
     if not row:
         raise HTTPException(status_code=404, detail="Alert not found")
     row.active = not row.active
@@ -40,8 +63,16 @@ def toggle_alert(alert_id: int, db: Session = Depends(get_db)):
 
 
 @router.delete("/{alert_id}")
-def delete_alert(alert_id: int, db: Session = Depends(get_db)):
-    row = db.query(AlertRow).filter(AlertRow.id == alert_id).first()
+def delete_alert(
+    alert_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    row = (
+        db.query(AlertRow)
+        .filter(AlertRow.id == alert_id, AlertRow.user_id == current_user.id)
+        .first()
+    )
     if not row:
         raise HTTPException(status_code=404, detail="Alert not found")
     db.delete(row)

@@ -1,6 +1,7 @@
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Star } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   useStockSummary, useHealthScore, useValuation, useMoat,
   useSentiment, useValuationRange, useYoYFinancials, useWatchlist, useMomentum,
@@ -18,6 +19,8 @@ export default function StockDetail() {
   const { ticker = "" } = useParams<{ ticker: string }>();
   const t = ticker.toUpperCase();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
 
   const { data: stock, isLoading: loadingStock, error: stockError } = useStockSummary(t);
   const { data: health, isLoading: loadingHealth } = useHealthScore(t);
@@ -60,7 +63,10 @@ export default function StockDetail() {
             {stock.change_pct >= 0 ? "+" : ""}{stock.change_pct.toFixed(2)}%
           </p>
           <button
-            onClick={() => isWatched ? removeFromWatchlist.mutate() : addToWatchlist.mutate()}
+            onClick={() => {
+              if (!isAuthenticated) { navigate("/login"); return; }
+              isWatched ? removeFromWatchlist.mutate() : addToWatchlist.mutate();
+            }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
             style={{
               backgroundColor: isWatched ? "var(--accent)" : "var(--surface)",
@@ -69,7 +75,7 @@ export default function StockDetail() {
             }}
           >
             <Star size={14} fill={isWatched ? "white" : "none"} />
-            {isWatched ? "Watching" : "Add to Watchlist"}
+            {isAuthenticated ? (isWatched ? "Watching" : "Add to Watchlist") : "Sign in to Watch"}
           </button>
         </div>
       </div>

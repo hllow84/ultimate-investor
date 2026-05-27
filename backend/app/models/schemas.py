@@ -123,3 +123,18 @@ class Alert(BaseModel):
     metric: Optional[str] = None
     active: bool = True
     triggered_at: Optional[str] = None
+
+
+class UserCreate(BaseModel):
+    email: str
+    password: str
+
+
+class UserResponse(BaseModel):
+    id: int
+    email: str
+
+
+class Token(BaseModel):
+    access_token: str
+    user: UserResponse

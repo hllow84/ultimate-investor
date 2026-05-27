@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
+import { useAuth } from "@/contexts/AuthContext";
 
 export function useStockSummary(ticker: string) {
   return useQuery({
@@ -73,8 +74,10 @@ export function useMomentum(ticker: string) {
 }
 
 export function useWatchlist() {
+  const { isAuthenticated } = useAuth();
   return useQuery({
     queryKey: ["watchlist"],
     queryFn: api.watchlist.list,
+    enabled: isAuthenticated,
   });
 }

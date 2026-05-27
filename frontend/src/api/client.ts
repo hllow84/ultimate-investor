@@ -9,20 +9,28 @@ import type {
   TechnicalMomentum,
   WatchlistItem,
   Alert,
+  Token,
 } from "@/types";
 
 const BASE = "/api";
 
+function authHeader(): Record<string, string> {
+  const token = localStorage.getItem("token");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`);
+  const res = await fetch(`${BASE}${path}`, { headers: authHeader() });
   if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
   return res.json();
 }
 
-async function post<T>(path: string, body: unknown): Promise<T> {
+async function post<T>(path: string, body: unknown, withAuth = false): Promise<T> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (withAuth) Object.assign(headers, authHeader());
   const res = await fetch(`${BASE}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
@@ -30,11 +38,23 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 }
 
 async function del(path: string): Promise<void> {
-  const res = await fetch(`${BASE}${path}`, { method: "DELETE" });
+  const res = await fetch(`${BASE}${path}`, { method: "DELETE", headers: authHeader() });
   if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
 }
 
+async function patch<T>(path: string): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, { method: "PATCH", headers: authHeader() });
+  if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
 export const api = {
+  auth: {
+    login: (email: string, password: string) =>
+      post<Token>("/auth/login", { email, password }),
+    register: (email: string, password: string) =>
+      post<Token>("/auth/register", { email, password }),
+  },
   stocks: {
     summary: (ticker: string) => get<StockSummary>(`/stocks/${ticker}`),
     news: (ticker: string) => get<unknown[]>(`/stocks/${ticker}/news`),
@@ -50,12 +70,13 @@ export const api = {
   },
   watchlist: {
     list: () => get<WatchlistItem[]>(`/watchlist/`),
-    add: (item: WatchlistItem) => post<WatchlistItem>(`/watchlist/`, item),
+    add: (item: WatchlistItem) => post<WatchlistItem>(`/watchlist/`, item, true),
     remove: (ticker: string) => del(`/watchlist/${ticker}`),
   },
   alerts: {
     list: () => get<Alert[]>(`/alerts/`),
-    create: (alert: Alert) => post<Alert>(`/alerts/`, alert),
+    create: (alert: Alert) => post<Alert>(`/alerts/`, alert, true),
+    toggle: (id: number) => patch<Alert>(`/alerts/${id}/toggle`),
     delete: (id: number) => del(`/alerts/${id}`),
   },
 };

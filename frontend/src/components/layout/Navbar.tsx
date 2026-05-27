@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Search, TrendingUp, Bell, Star, BarChart2, Layers } from "lucide-react";
+import { Search, TrendingUp, Bell, Star, BarChart2, Layers, LogIn, LogOut, User } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function Navbar() {
   const [query, setQuery] = useState("");
   const navigate = useNavigate();
+  const { user, isAuthenticated, logout } = useAuth();
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -55,6 +57,28 @@ export default function Navbar() {
         <Link to="/alerts" className="flex items-center gap-1.5 text-sm" style={{ color: "var(--muted)" }}>
           <Bell size={16} /> Alerts
         </Link>
+
+        <div style={{ width: "1px", height: "16px", backgroundColor: "var(--border)" }} />
+
+        {isAuthenticated ? (
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1.5 text-sm" style={{ color: "var(--muted)" }}>
+              <User size={15} />
+              {user?.email}
+            </span>
+            <button
+              onClick={logout}
+              className="flex items-center gap-1.5 text-sm transition-colors"
+              style={{ color: "var(--muted)" }}
+            >
+              <LogOut size={15} /> Sign out
+            </button>
+          </div>
+        ) : (
+          <Link to="/login" className="flex items-center gap-1.5 text-sm" style={{ color: "var(--accent)" }}>
+            <LogIn size={15} /> Sign in
+          </Link>
+        )}
       </div>
     </nav>
   );

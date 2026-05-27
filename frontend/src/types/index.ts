@@ -120,3 +120,13 @@ export interface Alert {
   active: boolean;
   triggered_at?: string | null;
 }
+
+export interface UserResponse {
+  id: number;
+  email: string;
+}
+
+export interface Token {
+  access_token: string;
+  user: UserResponse;
+}

@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-from app.routers import stocks, analysis, watchlist, alerts, options
+from app.routers import stocks, analysis, watchlist, alerts, options, auth
 from app.db.database import engine, SessionLocal
 from app.db import models
 
@@ -18,17 +18,71 @@ CHECK_INTERVAL_SECONDS = 300  # 5 minutes
 def _migrate() -> None:
     """Add columns that create_all won't add to existing tables."""
     with engine.connect() as conn:
+        # triggered_at on alerts
         try:
             conn.execute(text("ALTER TABLE alerts ADD COLUMN triggered_at DATETIME"))
             conn.commit()
-            log.info("Migration: added triggered_at column to alerts")
         except Exception:
-            pass  # Column already exists
+            pass
+
+        # user_id on watchlist
+        try:
+            conn.execute(text("ALTER TABLE watchlist ADD COLUMN user_id INTEGER DEFAULT 1"))
+            conn.commit()
+            log.info("Migration: added user_id column to watchlist")
+        except Exception:
+            pass
+
+        # user_id on alerts
+        try:
+            conn.execute(text("ALTER TABLE alerts ADD COLUMN user_id INTEGER DEFAULT 1"))
+            conn.commit()
+            log.info("Migration: added user_id column to alerts")
+        except Exception:
+            pass
+
+        # Create a default user (id=1) for any existing rows
+        try:
+            count = conn.execute(text("SELECT COUNT(*) FROM users")).scalar()
+            if count == 0:
+                existing = conn.execute(
+                    text("SELECT COUNT(*) FROM watchlist WHERE user_id IS NOT NULL")
+                ).scalar()
+                if existing and existing > 0:
+                    from app.services.auth_service import hash_password
+                    conn.execute(
+                        text(
+                            "INSERT INTO users (id, email, hashed_password, created_at) "
+                            "VALUES (1, 'default@localhost', :pwd, datetime('now'))"
+                        ),
+                        {"pwd": hash_password("changeme")},
+                    )
+                    conn.commit()
+                    log.info("Migration: created default user (id=1) for existing watchlist/alert data")
+        except Exception:
+            pass
+
+        # Drop old single-column unique index on watchlist.ticker and replace with (user_id, ticker)
+        try:
+            conn.execute(text("DROP INDEX IF EXISTS ix_watchlist_ticker"))
+            conn.commit()
+        except Exception:
+            pass
+        try:
+            conn.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_watchlist_user_ticker "
+                    "ON watchlist(user_id, ticker)"
+                )
+            )
+            conn.commit()
+        except Exception:
+            pass
 
 
 async def _alert_checker_loop() -> None:
     from app.services.alert_checker import run_alert_check
-    await asyncio.sleep(10)  # brief delay after startup
+    await asyncio.sleep(10)
     while True:
         try:
             await asyncio.to_thread(run_alert_check)
@@ -38,9 +92,8 @@ async def _alert_checker_loop() -> None:
 
 
 async def _options_precompute() -> None:
-    """Pre-warm the options spread cache shortly after startup, then refresh every 8 hours."""
     from app.services.options_scanner import scan_credit_spreads
-    await asyncio.sleep(30)  # let the server fully start first
+    await asyncio.sleep(30)
     while True:
         try:
             log.info("Options scanner: starting daily scan...")
@@ -48,7 +101,7 @@ async def _options_precompute() -> None:
             log.info("Options scanner: done — %d spread(s) cached for %s", result["count"], result["date"])
         except Exception:
             log.exception("Options scanner error")
-        await asyncio.sleep(8 * 3600)  # refresh every 8 hours
+        await asyncio.sleep(8 * 3600)
 
 
 @asynccontextmanager
@@ -84,6 +137,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router,      prefix="/api/auth",      tags=["auth"])
 app.include_router(stocks.router,    prefix="/api/stocks",    tags=["stocks"])
 app.include_router(analysis.router,  prefix="/api/analysis",  tags=["analysis"])
 app.include_router(watchlist.router, prefix="/api/watchlist", tags=["watchlist"])
