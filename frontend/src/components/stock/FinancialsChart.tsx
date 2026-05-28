@@ -90,6 +90,12 @@ function Charts({ p, isQuarterly }: { p: FinancialPeriod; isQuarterly: boolean }
     net: p.net_margin[i],
   }));
 
+  const allMarginVals = marginData
+    .flatMap(d => [d.gross, d.op, d.net])
+    .filter((v): v is number => v != null);
+  const marginMin = allMarginVals.length ? Math.floor(Math.min(...allMarginVals) - 3) : 0;
+  const marginMax = allMarginVals.length ? Math.ceil(Math.max(...allMarginVals) + 3) : 100;
+
   const fcfData = p.labels.map((l, i) => ({
     l, v: p.free_cash_flow[i] != null ? p.free_cash_flow[i]! / 1e9 : null,
     raw: p.free_cash_flow[i],
@@ -155,7 +161,7 @@ function Charts({ p, isQuarterly }: { p: FinancialPeriod; isQuarterly: boolean }
         <ResponsiveContainer width="100%" height={130}>
           <LineChart data={marginData} margin={{ top: 4, right: 4, left: leftMargin, bottom: 0 }}>
             <XAxis dataKey="l" tick={axisStyle} axisLine={false} tickLine={false} interval={xInterval} />
-            <YAxis tick={axisStyle} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`} />
+            <YAxis tick={axisStyle} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`} domain={[marginMin, marginMax]} />
             <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [`${v.toFixed(1)}%`]} />
             <Line type="monotone" dataKey="gross" stroke="#6366f1" strokeWidth={2} name="Gross"
               dot={(props) => <TrendDot {...props} allData={p} margKey="gross_margin" dataKey="gross" />}
