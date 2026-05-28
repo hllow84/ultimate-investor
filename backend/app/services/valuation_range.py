@@ -3,6 +3,7 @@ from app.config import settings
 from app.services.valuation import (
     dcf_fair_value, forward_pe_fair_value, trailing_pe_fair_value,
     pb_fair_value, ev_ebitda_fair_value,
+    sticker_price_fair_value, graham_number_value, lynch_fair_value,
     SECTOR_PE, METHOD_WEIGHTS,
 )
 
@@ -24,16 +25,19 @@ def _gather_inputs(info: dict) -> dict:
     analyst    = float(info.get("targetMeanPrice") or info.get("targetMedianPrice") or 0) or None
 
     return {
-        "sector":           sector,
-        "sector_pe":        sector_pe,
-        "dcf":              dcf_fair_value(info),
-        "forward_pe_value": forward_pe_fair_value(info),
-        "trailing_pe_value":trailing_pe_fair_value(info),
-        "pb_value":         pb_fair_value(info),
-        "ev_ebitda_value":  ev_ebitda_fair_value(info),
-        "analyst_target":   round(analyst, 2) if analyst else None,
-        "forward_eps":      float(info.get("forwardEps") or 0),
-        "growth_rate":      round(growth * 100, 1),
+        "sector":            sector,
+        "sector_pe":         sector_pe,
+        "dcf":               dcf_fair_value(info),
+        "forward_pe_value":  forward_pe_fair_value(info),
+        "trailing_pe_value": trailing_pe_fair_value(info),
+        "pb_value":          pb_fair_value(info),
+        "ev_ebitda_value":   ev_ebitda_fair_value(info),
+        "sticker_price":     sticker_price_fair_value(info),
+        "graham_number":     graham_number_value(info),
+        "lynch_fv":          lynch_fair_value(info),
+        "analyst_target":    round(analyst, 2) if analyst else None,
+        "forward_eps":       float(info.get("forwardEps") or 0),
+        "growth_rate":       round(growth * 100, 1),
     }
 
 
@@ -44,6 +48,9 @@ def _weighted_estimates(inputs: dict, price: float) -> list[float]:
         (inputs.get("forward_pe_value"), METHOD_WEIGHTS["forward_pe"]),
         (inputs.get("ev_ebitda_value"),  METHOD_WEIGHTS["ev_ebitda"]),
         (inputs.get("dcf"),              METHOD_WEIGHTS["dcf"]),
+        (inputs.get("sticker_price"),    METHOD_WEIGHTS["sticker_price"]),
+        (inputs.get("graham_number"),    METHOD_WEIGHTS["graham_number"]),
+        (inputs.get("lynch_fv"),         METHOD_WEIGHTS["lynch_fv"]),
         (inputs.get("trailing_pe_value"),METHOD_WEIGHTS["trailing_pe"]),
         (inputs.get("pb_value"),         METHOD_WEIGHTS["pb"]),
     ]
@@ -51,7 +58,6 @@ def _weighted_estimates(inputs: dict, price: float) -> list[float]:
         valid = [(v, w) for v, w in candidates if v is not None and 0.20 * price <= v <= 5.0 * price]
     else:
         valid = [(v, w) for v, w in candidates if v is not None]
-    # Expand by weight so min/max reflect weighted endpoints
     expanded = [v for v, w in valid for _ in range(w)]
     return expanded
 
@@ -68,6 +74,9 @@ def _computed_range(ticker: str, price: float, inputs: dict, info: dict) -> Valu
         (inputs.get("forward_pe_value"), METHOD_WEIGHTS["forward_pe"]),
         (inputs.get("ev_ebitda_value"),  METHOD_WEIGHTS["ev_ebitda"]),
         (inputs.get("dcf"),              METHOD_WEIGHTS["dcf"]),
+        (inputs.get("sticker_price"),    METHOD_WEIGHTS["sticker_price"]),
+        (inputs.get("graham_number"),    METHOD_WEIGHTS["graham_number"]),
+        (inputs.get("lynch_fv"),         METHOD_WEIGHTS["lynch_fv"]),
         (inputs.get("trailing_pe_value"),METHOD_WEIGHTS["trailing_pe"]),
         (inputs.get("pb_value"),         METHOD_WEIGHTS["pb"]),
     ]
@@ -137,10 +146,13 @@ def _ai_range(ticker: str, price: float, inputs: dict, info: dict) -> ValuationR
     prompt = f"""You are a senior equity research analyst. Produce a bear/base/bull valuation range for {name} ({ticker}), a {sector} company.
 
 Current price: ${price:.2f}
-Valuation inputs (weighted: analyst & forward P/E = 3×, EV/EBITDA & DCF = 2×, trailing P/E & P/B = 1×):
+Valuation inputs (weights: analyst & fwd P/E = 3×, EV/EBITDA & DCF & Sticker = 2×, Graham/Lynch/trailing/P/B = 1×):
 - DCF intrinsic value (2-stage, sector discount rate): {f"${inputs['dcf']:.2f}" if inputs.get('dcf') else 'N/A'}
 - Forward P/E fair value: {f"${inputs['forward_pe_value']:.2f}" if inputs.get('forward_pe_value') else 'N/A'}
 - EV/EBITDA fair value: {f"${inputs['ev_ebitda_value']:.2f}" if inputs.get('ev_ebitda_value') else 'N/A'}
+- Sticker Price (Phil Town / Rule #1, 15% MARR): {f"${inputs['sticker_price']:.2f}" if inputs.get('sticker_price') else 'N/A'}
+- Graham Number (√22.5×EPS×BVPS): {f"${inputs['graham_number']:.2f}" if inputs.get('graham_number') else 'N/A'}
+- Lynch Fair Value (EPS × growth%): {f"${inputs['lynch_fv']:.2f}" if inputs.get('lynch_fv') else 'N/A'}
 - Trailing P/E fair value: {f"${inputs['trailing_pe_value']:.2f}" if inputs.get('trailing_pe_value') else 'N/A'}
 - P/B fair value: {f"${inputs['pb_value']:.2f}" if inputs.get('pb_value') else 'N/A'}
 - Analyst consensus target: {f"${inputs['analyst_target']:.2f}" if inputs.get('analyst_target') else 'N/A'}

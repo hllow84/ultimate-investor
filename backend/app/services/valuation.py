@@ -66,6 +66,9 @@ METHOD_WEIGHTS = {
     "forward_pe":     3,   # most widely used by practitioners
     "ev_ebitda":      2,   # capital-structure-neutral
     "dcf":            2,   # fundamentals-based but assumption-sensitive
+    "sticker_price":  2,   # Phil Town: growth compounding discounted at 15% MARR
+    "graham_number":  1,   # Ben Graham: conservative asset-backed ceiling
+    "lynch_fv":       1,   # Peter Lynch: PEG=1 implied fair value
     "trailing_pe":    1,   # backward-looking
     "pb":             1,   # only meaningful for asset-heavy sectors
 }
@@ -74,27 +77,32 @@ METHOD_WEIGHTS = {
 def compute_valuation(ticker: str, financials: dict) -> ValuationResult:
     info = financials.get("info", {})
     price = float(info.get("currentPrice", 0) or 0)
-    sector = info.get("sector", "")
 
-    pe          = info.get("trailingPE")
-    forward_pe  = info.get("forwardPE")
-    ev_ebitda   = info.get("enterpriseToEbitda")
-    peg         = info.get("pegRatio")
-    pb          = info.get("priceToBook")
+    pe             = info.get("trailingPE")
+    forward_pe     = info.get("forwardPE")
+    ev_ebitda      = info.get("enterpriseToEbitda")
+    peg            = info.get("pegRatio")
+    pb             = info.get("priceToBook")
     analyst_target = info.get("targetMeanPrice") or info.get("targetMedianPrice")
 
-    dcf_val       = dcf_fair_value(info)
-    fwd_pe_val    = forward_pe_fair_value(info)
-    trail_pe_val  = trailing_pe_fair_value(info)
-    pb_val        = pb_fair_value(info)
-    ev_val        = ev_ebitda_fair_value(info)
+    dcf_val      = dcf_fair_value(info)
+    fwd_pe_val   = forward_pe_fair_value(info)
+    trail_pe_val = trailing_pe_fair_value(info)
+    pb_val       = pb_fair_value(info)
+    ev_val       = ev_ebitda_fair_value(info)
+    sticker_val  = sticker_price_fair_value(info)
+    graham_val   = graham_number_value(info)
+    lynch_val    = lynch_fair_value(info)
 
     # Weighted average — drop estimates outside 20%–500% of market price
-    candidates: list[tuple[float, int]] = [
+    candidates: list[tuple[float | None, int]] = [
         (analyst_target, METHOD_WEIGHTS["analyst_target"]),
         (fwd_pe_val,     METHOD_WEIGHTS["forward_pe"]),
         (ev_val,         METHOD_WEIGHTS["ev_ebitda"]),
         (dcf_val,        METHOD_WEIGHTS["dcf"]),
+        (sticker_val,    METHOD_WEIGHTS["sticker_price"]),
+        (graham_val,     METHOD_WEIGHTS["graham_number"]),
+        (lynch_val,      METHOD_WEIGHTS["lynch_fv"]),
         (trail_pe_val,   METHOD_WEIGHTS["trailing_pe"]),
         (pb_val,         METHOD_WEIGHTS["pb"]),
     ]
@@ -122,6 +130,9 @@ def compute_valuation(ticker: str, financials: dict) -> ValuationResult:
         ticker=ticker,
         dcf_value=dcf_val,
         ev_ebitda_value=ev_val,
+        sticker_price=sticker_val,
+        graham_number_value=graham_val,
+        lynch_fair_value=lynch_val,
         pe_ratio=pe,
         forward_pe=forward_pe,
         ev_ebitda=ev_ebitda,
@@ -129,6 +140,8 @@ def compute_valuation(ticker: str, financials: dict) -> ValuationResult:
         price_to_book=pb,
         analyst_target=round(analyst_target, 2) if analyst_target else None,
         fair_value_estimate=fair_value,
+        margin_of_safety_price=round(fair_value * 0.75, 2) if fair_value else None,
+        strong_buy_price=round(fair_value * 0.50, 2) if fair_value else None,
         upside_pct=upside,
         verdict=verdict,
     )
@@ -204,6 +217,56 @@ def pb_fair_value(info: dict) -> float | None:
     sector = info.get("sector", "")
     multiple = SECTOR_PB.get(sector, 2.5)
     return round(float(bvps) * multiple, 2)
+
+
+def sticker_price_fair_value(info: dict) -> float | None:
+    """
+    Phil Town / Rule #1 Sticker Price:
+      1. Project EPS 10 years at capped analyst growth rate
+      2. Future PE = min(trailing PE, 2 × growth%) — don't overpay for growth
+      3. Future Price = Future EPS × Future PE
+      4. Discount back at 15% MARR (minimum acceptable rate of return)
+    """
+    eps = float(info.get("forwardEps") or info.get("trailingEps") or 0)
+    if eps <= 0:
+        return None
+    growth = max(0.05, min(float(info.get("earningsGrowth") or info.get("revenueGrowth") or 0.05), 0.25))
+    trailing_pe = float(info.get("trailingPE") or 0)
+    growth_pe = growth * 200           # 2 × growth% (e.g. 15% growth → PE 30)
+    future_pe = min(trailing_pe, growth_pe) if trailing_pe > 5 else growth_pe
+    future_pe = max(future_pe, 8.0)    # floor at 8× — never assume below trough PE
+    future_eps = eps * (1 + growth) ** 10
+    future_price = future_eps * future_pe
+    return round(future_price / (1.15 ** 10), 2)
+
+
+def graham_number_value(info: dict) -> float | None:
+    """
+    Ben Graham Number = √(22.5 × EPS × Book Value per Share)
+    Derived from: max P/E 15 × max P/B 1.5 = 22.5.
+    Represents the upper bound a defensive investor should pay.
+    """
+    eps  = float(info.get("trailingEps") or info.get("forwardEps") or 0)
+    bvps = float(info.get("bookValue") or 0)
+    if eps <= 0 or bvps <= 0:
+        return None
+    return round((22.5 * eps * bvps) ** 0.5, 2)
+
+
+def lynch_fair_value(info: dict) -> float | None:
+    """
+    Peter Lynch Fair Value: EPS × growth rate as a whole number.
+    e.g. EPS $2, growth 15% → FV = $2 × 15 = $30 (implies PEG = 1.0).
+    Only meaningful for growth stocks with 5–50% growth.
+    """
+    eps    = float(info.get("forwardEps") or info.get("trailingEps") or 0)
+    growth = float(info.get("earningsGrowth") or info.get("revenueGrowth") or 0)
+    if eps <= 0 or growth <= 0:
+        return None
+    growth_pct = growth * 100
+    if not (5 <= growth_pct <= 50):    # outside Lynch's meaningful range
+        return None
+    return round(eps * growth_pct, 2)
 
 
 def ev_ebitda_fair_value(info: dict) -> float | None:

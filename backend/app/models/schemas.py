@@ -26,15 +26,23 @@ class HealthScore(BaseModel):
 
 class ValuationResult(BaseModel):
     ticker: str
+    # Method estimates
     dcf_value: Optional[float] = None
-    ev_ebitda_value: Optional[float] = None   # fair value from EV/EBITDA method
+    ev_ebitda_value: Optional[float] = None
+    sticker_price: Optional[float] = None     # Phil Town / Rule #1
+    graham_number_value: Optional[float] = None  # Ben Graham √(22.5 × EPS × BVPS)
+    lynch_fair_value: Optional[float] = None  # Peter Lynch EPS × growth%
+    analyst_target: Optional[float] = None
+    # Raw market multiples
     pe_ratio: Optional[float] = None
     forward_pe: Optional[float] = None
     ev_ebitda: Optional[float] = None
     peg_ratio: Optional[float] = None
     price_to_book: Optional[float] = None
-    analyst_target: Optional[float] = None
+    # Composite output
     fair_value_estimate: float
+    margin_of_safety_price: Optional[float] = None  # FV × 0.75 — Adam Khoo buy zone
+    strong_buy_price: Optional[float] = None         # FV × 0.50 — Buffett/Phil Town
     upside_pct: float
     verdict: str  # "undervalued" | "fairly valued" | "overvalued"
 
