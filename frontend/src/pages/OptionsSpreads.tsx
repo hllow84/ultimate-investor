@@ -22,6 +22,14 @@ interface WidthVariant {
   buffer_pct: number;
 }
 
+interface TechSummary {
+  signal: "bullish" | "bearish" | "neutral";
+  rsi: number;
+  sma50_pct: number | null;
+  sma200_pct: number | null;
+  w52_high_pct: number | null;
+}
+
 interface Spread {
   ticker: string;
   strategy: string;
@@ -40,6 +48,7 @@ interface Spread {
   roi_pct: number;
   widths: WidthVariant[];
   events: SpreadEvent[];
+  tech?: TechSummary;
 }
 
 interface VixInfo {
@@ -146,6 +155,25 @@ function EventBadge({ ev }: { ev: SpreadEvent }) {
   );
 }
 
+function TechBadge({ tech }: { tech?: TechSummary }) {
+  if (!tech) return <span style={{ color: "var(--muted)" }}>—</span>;
+  const { signal, rsi, sma50_pct, sma200_pct } = tech;
+  const sigColor = signal === "bullish" ? "var(--green)" : signal === "bearish" ? "var(--red)" : "var(--yellow)";
+  const sigLabel = signal === "bullish" ? "▲ Bullish" : signal === "bearish" ? "▼ Bearish" : "● Neutral";
+  const fmt = (v: number | null, label: string) =>
+    v != null ? <span style={{ color: v > 0 ? "var(--green)" : "var(--red)" }}>{v > 0 ? "+" : ""}{v}%</span> : null;
+  return (
+    <div className="text-xs leading-snug">
+      <span className="font-semibold" style={{ color: sigColor }}>{sigLabel}</span>
+      <p style={{ color: "var(--muted)" }}>
+        RSI <span style={{ color: rsi > 70 ? "var(--red)" : rsi < 30 ? "var(--green)" : "var(--text)" }}>{rsi}</span>
+      </p>
+      {sma50_pct != null && <p style={{ color: "var(--muted)" }}>50MA {fmt(sma50_pct, "")}</p>}
+      {sma200_pct != null && <p style={{ color: "var(--muted)" }}>200MA {fmt(sma200_pct, "")}</p>}
+    </div>
+  );
+}
+
 function EventsCell({ events }: { events: SpreadEvent[] }) {
   if (!events || events.length === 0) return <span style={{ color: "var(--muted)" }}>—</span>;
   return (
@@ -157,7 +185,7 @@ function EventsCell({ events }: { events: SpreadEvent[] }) {
 
 // ─── Main spread row with expandable widths ───────────────────────────────────
 
-const NUM_COLS = 13;
+const NUM_COLS = 14;
 
 function SpreadRows({ s, expanded, onToggle }: {
   s: Spread;
@@ -291,6 +319,11 @@ function SpreadRows({ s, expanded, onToggle }: {
         {/* Events */}
         <td className="py-3 px-2 text-sm">
           <EventsCell events={s.events ?? []} />
+        </td>
+
+        {/* Tech */}
+        <td className="py-3 px-2">
+          <TechBadge tech={s.tech} />
         </td>
       </tr>
 
@@ -448,7 +481,7 @@ function CustomTickerScanner({ expandedSet, onToggle }: {
             <thead>
               <tr style={{ borderBottom: "1px solid var(--border)" }}>
                 <th className="py-2 pl-3 pr-1 w-6" />
-                {["Ticker", "Strategy", "Price", "Strike / Δ", "Net Credit", "Max Risk", "ROI %", "Buffer %", "±1σ", "DTE", "IV", "Events"].map((h, i) => (
+                {["Ticker", "Strategy", "Price", "Strike / Δ", "Net Credit", "Max Risk", "ROI %", "Buffer %", "±1σ", "DTE", "IV", "Events", "Tech"].map((h, i) => (
                   <th key={i} className={`py-2 px-2 text-xs font-semibold uppercase tracking-wider ${i > 1 ? "text-right" : "text-left"}`}
                     style={{ color: "var(--muted)" }}>{h}</th>
                 ))}
@@ -629,6 +662,7 @@ export default function OptionsSpreads() {
                   ["dte", "DTE"],
                   [null, "IV"],
                   [null, "Events (30d)"],
+                  [null, "Tech"],
                 ] as [string | null, string][]).map(([key, label], i) => (
                   <th key={i}
                     className={`py-3 px-2 text-xs font-semibold uppercase tracking-wider ${i > 1 ? "text-right" : i === 1 ? "text-left" : "text-left"}`}

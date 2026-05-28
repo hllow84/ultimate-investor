@@ -351,31 +351,92 @@ def _stock_events(ticker_obj, window_days: int) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# 30-day Historical Volatility
+# History-based metrics: HV30 + Technical Summary (single 1y fetch)
 # ---------------------------------------------------------------------------
 
-def _compute_hv30(ticker_obj) -> float:
+def _rsi(closes: list[float], period: int = 14) -> float:
+    if len(closes) < period + 1:
+        return 50.0
+    changes = [closes[i] - closes[i - 1] for i in range(1, len(closes))]
+    gains = [max(c, 0.0) for c in changes[-period:]]
+    losses = [abs(min(c, 0.0)) for c in changes[-period:]]
+    avg_gain = sum(gains) / period
+    avg_loss = sum(losses) / period
+    if avg_loss == 0:
+        return 100.0
+    return 100.0 - (100.0 / (1.0 + avg_gain / avg_loss))
+
+
+def _sma(closes: list[float], period: int) -> Optional[float]:
+    if len(closes) < period:
+        return None
+    return sum(closes[-period:]) / period
+
+
+def _tech_signal(rsi: float, sma50_pct: Optional[float], sma200_pct: Optional[float]) -> str:
+    bull = bear = 0
+    if rsi > 60:
+        bull += 1
+    elif rsi < 40:
+        bear += 1
+    if sma50_pct is not None:
+        bull += 1 if sma50_pct > 0 else 0
+        bear += 1 if sma50_pct <= 0 else 0
+    if sma200_pct is not None:
+        bull += 1 if sma200_pct > 0 else 0
+        bear += 1 if sma200_pct <= 0 else 0
+    if bull >= 2:
+        return "bullish"
+    if bear >= 2:
+        return "bearish"
+    return "neutral"
+
+
+def _compute_history_metrics(ticker_obj) -> tuple[float, dict]:
     """
-    Annualised 30-day Historical Volatility (%).
-    Uses close-to-close log returns over the last ~45 calendar days
-    (≈ 30 trading days), then annualises: σ_daily × √252 × 100.
-    Returns 0.0 on failure.
+    Single 1-year history fetch → (hv30_pct, tech_summary).
+    tech_summary keys: signal, rsi, sma50_pct, sma200_pct, w52_high_pct
+    Returns (0.0, {}) on failure.
     """
+    empty_tech: dict = {}
     try:
-        hist = ticker_obj.history(period="45d")
+        hist = ticker_obj.history(period="1y")
         closes = hist["Close"].dropna().tolist()
         if len(closes) < 10:
-            return 0.0
-        log_returns = [math.log(closes[i] / closes[i - 1]) for i in range(1, len(closes))]
-        n = len(log_returns)
-        if n < 2:
-            return 0.0
-        mean = sum(log_returns) / n
-        variance = sum((x - mean) ** 2 for x in log_returns) / (n - 1)
-        return round(math.sqrt(variance) * math.sqrt(252) * 100, 1)
+            return 0.0, empty_tech
+
+        # HV30 — last 30 trading days (~45 calendar)
+        hv_closes = closes[-45:] if len(closes) >= 45 else closes
+        log_returns = [math.log(hv_closes[i] / hv_closes[i - 1]) for i in range(1, len(hv_closes))]
+        if len(log_returns) >= 2:
+            mean = sum(log_returns) / len(log_returns)
+            variance = sum((x - mean) ** 2 for x in log_returns) / (len(log_returns) - 1)
+            hv30 = round(math.sqrt(variance) * math.sqrt(252) * 100, 1)
+        else:
+            hv30 = 0.0
+
+        # Technical
+        current = closes[-1]
+        rsi_val = round(_rsi(closes), 1)
+        sma50 = _sma(closes, 50)
+        sma200 = _sma(closes, 200)
+        sma50_pct = round((current - sma50) / sma50 * 100, 1) if sma50 else None
+        sma200_pct = round((current - sma200) / sma200 * 100, 1) if sma200 else None
+        w52_high = max(closes)
+        w52_high_pct = round((current - w52_high) / w52_high * 100, 1)
+
+        tech = {
+            "signal": _tech_signal(rsi_val, sma50_pct, sma200_pct),
+            "rsi": rsi_val,
+            "sma50_pct": sma50_pct,
+            "sma200_pct": sma200_pct,
+            "w52_high_pct": w52_high_pct,
+        }
+        return hv30, tech
+
     except Exception as e:
-        log.debug("HV30 failed: %s", e)
-        return 0.0
+        log.debug("history metrics failed: %s", e)
+        return 0.0, empty_tech
 
 
 # ---------------------------------------------------------------------------
@@ -450,7 +511,7 @@ def scan_single_ticker(sym: str) -> dict:
         expiry_date = datetime.strptime(expiry, "%Y-%m-%d").date()
         dte = (expiry_date - date.today()).days
         chain = ticker.option_chain(expiry)
-        hv30 = _compute_hv30(ticker)
+        hv30, tech = _compute_history_metrics(ticker)
         spreads = _build_spreads(sym, S, expiry, dte, chain, hv30)
 
         window = dte + 2
@@ -459,6 +520,7 @@ def scan_single_ticker(sym: str) -> dict:
         all_evts = sorted(stock_evts + macro_evts, key=lambda x: x["days_away"])
         for s in spreads:
             s["events"] = all_evts
+            s["tech"] = tech
 
         if not spreads:
             return {"error": f"{sym} passed filters but no spreads met the criteria (check liquidity / DTE)", "spreads": []}
@@ -524,7 +586,7 @@ def scan_credit_spreads(force_refresh: bool = False) -> dict:
             dte = (expiry_date - date.today()).days
 
             chain = ticker.option_chain(expiry)
-            hv30 = _compute_hv30(ticker)
+            hv30, tech = _compute_history_metrics(ticker)
             spreads = _build_spreads(sym, S, expiry, dte, chain, hv30)
 
             # Collect events within the spread's lifetime (DTE + 2-day buffer)
@@ -535,6 +597,7 @@ def scan_credit_spreads(force_refresh: bool = False) -> dict:
 
             for s in spreads:
                 s["events"] = all_evts
+                s["tech"] = tech
 
             all_spreads.extend(spreads)
             log.info("%s: found %d spread(s), %d event(s)", sym, len(spreads), len(all_evts))
