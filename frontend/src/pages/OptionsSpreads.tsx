@@ -53,6 +53,7 @@ interface SpreadsResponse {
   vix: number;
   vix_info: VixInfo;
   cached: boolean;
+  after_hours: boolean;
   date: string;
   count: number;
 }
@@ -126,7 +127,7 @@ function SummaryCard({ count, puts, calls }: { count: number; puts: number; call
           <p className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>Bear Call</p>
         </div>
       </div>
-      <p className="mt-3 text-xs" style={{ color: "var(--muted)" }}>Delta ~0.10 short leg · 30–45 DTE · min 5% ROI · expand rows for $5/$10/$25/$50/$100 widths</p>
+      <p className="mt-3 text-xs" style={{ color: "var(--muted)" }}>Delta ~0.10 short leg · 30–45 DTE · conservative bid/ask pricing · expand rows for $5/$10/$25/$50/$100 widths</p>
     </div>
   );
 }
@@ -193,9 +194,13 @@ function SpreadRows({ s, expanded, onToggle }: {
 
         {/* Ticker */}
         <td className="py-3 px-2" onClick={e => e.stopPropagation()}>
-          <Link to={`/stock/${s.ticker}`} className="font-semibold text-sm hover:underline" style={{ color: "var(--accent)" }}>
-            {s.ticker}
-          </Link>
+          {s.ticker.startsWith("^") ? (
+            <span className="font-semibold text-sm" style={{ color: "var(--accent)" }}>{s.ticker}</span>
+          ) : (
+            <Link to={`/stock/${s.ticker}`} className="font-semibold text-sm hover:underline" style={{ color: "var(--accent)" }}>
+              {s.ticker}
+            </Link>
+          )}
         </td>
 
         {/* Strategy */}
@@ -436,12 +441,24 @@ export default function OptionsSpreads() {
         </div>
       )}
 
+      {/* After-hours warning */}
+      {data?.after_hours && (
+        <div className="flex items-start gap-3 rounded-xl px-4 py-3 text-sm"
+          style={{ backgroundColor: "#f9731611", border: "1px solid #f9731633", color: "#f97316" }}>
+          <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+          <span>
+            <b>Market closed — prices are stale.</b> Credits are calculated from last-traded prices, not live bid/ask.
+            Actual premiums at market open will differ. Use these numbers for screening only.
+          </span>
+        </div>
+      )}
+
       {/* Loading */}
       {isLoading && (
         <div className="rounded-xl p-10 text-center" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)" }}>
           <RefreshCw size={28} className="animate-spin mx-auto mb-3" style={{ color: "var(--accent)" }} />
           <p style={{ color: "var(--muted)" }}>Scanning options chains for 20 tickers…</p>
-          <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>This takes ~40 seconds on the first load.</p>
+          <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>This takes ~40 seconds on the first load (21 tickers including SPX).</p>
         </div>
       )}
 
@@ -527,7 +544,7 @@ export default function OptionsSpreads() {
       <div className="rounded-xl p-4 text-xs" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)", color: "var(--muted)" }}>
         <p className="font-semibold mb-2" style={{ color: "var(--text)" }}>Legend</p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
-          <span><b style={{ color: "var(--text)" }}>Net Credit</b> — premium collected per share (×100 = $ per contract)</span>
+          <span><b style={{ color: "var(--text)" }}>Net Credit</b> — short bid − long ask (conservative realistic fill) per share (×100 = $ per contract)</span>
           <span><b style={{ color: "var(--text)" }}>Max Risk</b> — spread width − net credit (max loss per share)</span>
           <span><b style={{ color: "var(--text)" }}>ROI %</b> — net credit ÷ max risk · return on capital at risk</span>
           <span><b style={{ color: "var(--text)" }}>Buffer %</b> — how far stock must move before you lose money (be = breakeven price)</span>

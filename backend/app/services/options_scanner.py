@@ -6,14 +6,16 @@ long legs one strike further OTM, 30-45 DTE, for a curated list of liquid ticker
 """
 import logging
 import math
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time as dtime, timedelta
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import yfinance as yf
 
 log = logging.getLogger(__name__)
 
 CURATED_TICKERS = [
+    "^SPX",                                                       # SPX index — cash-settled, European, 60/40 tax
     "SPY", "QQQ", "IWM",
     "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA",
     "JPM", "BAC", "GS", "XOM", "AMD", "NFLX", "V", "MA",
@@ -27,7 +29,7 @@ TARGET_DELTA = 0.10      # absolute delta for short leg
 DELTA_RANGE_LOW = 0.05   # don't go below this (too OTM, thin premium)
 DELTA_RANGE_HIGH = 0.25  # don't go above this (too close to ATM, too much risk)
 MIN_BID = 0.05           # minimum bid for the short leg to consider it liquid
-MIN_ROI = 5.0            # minimum ROI% to include in results
+MIN_ROI = 2.0            # minimum ROI% — lowered from 5 to account for conservative bid/ask pricing
 
 
 # ---------------------------------------------------------------------------
@@ -56,12 +58,32 @@ def _bs_delta(S: float, K: float, T: float, r: float, sigma: float, option_type:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _midpoint(row) -> float:
+def _bid_price(row) -> float:
+    """Price you receive when selling — use for short leg credit."""
     bid = float(row.get("bid", 0) or 0)
-    ask = float(row.get("ask", 0) or 0)
-    if bid > 0 and ask > 0:
-        return (bid + ask) / 2.0
+    if bid > 0:
+        return bid
     return float(row.get("lastPrice", 0) or 0)
+
+
+def _ask_price(row) -> float:
+    """Price you pay when buying — use for long leg cost."""
+    ask = float(row.get("ask", 0) or 0)
+    if ask > 0:
+        return ask
+    return float(row.get("lastPrice", 0) or 0)
+
+
+def _is_market_open() -> bool:
+    """True if NYSE regular session is currently active."""
+    try:
+        now = datetime.now(ZoneInfo("America/New_York"))
+        if now.weekday() >= 5:
+            return False
+        t = now.time()
+        return dtime(9, 30) <= t <= dtime(16, 0)
+    except Exception:
+        return False
 
 
 def _find_target_expiry(options_dates: list[str]) -> Optional[str]:
@@ -114,7 +136,7 @@ def _width_variant(
     if actual_width < target_w * 0.4:
         return None
 
-    long_premium = _midpoint(long_row)
+    long_premium = _ask_price(long_row)   # you buy the long — pay ask
     net_credit = short_premium - long_premium
     if net_credit <= 0 or actual_width <= 0:
         return None
@@ -172,12 +194,8 @@ def _build_spreads(sym: str, S: float, expiry: str, dte: int, chain, hv30_pct: f
         cands["_diff"] = (cands["_delta"] - target_signed).abs()
         short_row = cands.loc[cands["_diff"].idxmin()]
         short_strike = float(short_row["strike"])
-        short_premium = _midpoint(short_row)
-        short_bid = float(short_row.get("bid", 0) or 0)
-        # After market hours bid=0; fall back to last traded price so the scanner
-        # still works outside regular trading hours (prices are indicative only)
-        if short_bid < MIN_BID:
-            short_bid = float(short_row.get("lastPrice", 0) or 0)
+        short_premium = _bid_price(short_row)  # you sell the short — receive bid
+        short_bid = short_premium
         short_delta_abs = round(abs(float(short_row["_delta"])), 3)
 
         if short_bid < MIN_BID or short_premium <= 0:
@@ -421,12 +439,15 @@ def scan_credit_spreads(force_refresh: bool = False) -> dict:
     global _cache
     today_str = date.today().isoformat()
 
+    after_hours = not _is_market_open()
+
     if not force_refresh and _cache and _cache[0] == today_str:
         return {
             "spreads": _cache[1],
             "vix": _cache[2],
             "vix_info": vix_label(_cache[2]),
             "cached": True,
+            "after_hours": after_hours,
             "date": today_str,
             "count": len(_cache[1]),
         }
@@ -482,6 +503,7 @@ def scan_credit_spreads(force_refresh: bool = False) -> dict:
             "vix": vix,
             "vix_info": vix_label(vix),
             "cached": True,
+            "after_hours": after_hours,
             "date": today_str,
             "count": len(_cache[1]),
         }
@@ -493,6 +515,7 @@ def scan_credit_spreads(force_refresh: bool = False) -> dict:
         "vix": vix,
         "vix_info": vix_label(vix),
         "cached": False,
+        "after_hours": after_hours,
         "date": today_str,
         "count": len(all_spreads),
     }
