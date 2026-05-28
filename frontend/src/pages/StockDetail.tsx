@@ -1,6 +1,7 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Star } from "lucide-react";
+import { useState } from "react";
+import { Star, ExternalLink, Users, MapPin, Building2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   useStockSummary, useHealthScore, useValuation, useMoat,
@@ -14,6 +15,76 @@ import MoatCard from "@/components/stock/MoatAnalysis";
 import SentimentCard from "@/components/stock/SentimentBadge";
 import FinancialsChart from "@/components/stock/FinancialsChart";
 import MomentumCard from "@/components/stock/MomentumCard";
+
+function CompanyIntro({ stock }: { stock: import("@/types").StockSummary }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const mcap = stock.market_cap
+    ? stock.market_cap >= 1e12
+      ? `$${(stock.market_cap / 1e12).toFixed(2)}T`
+      : stock.market_cap >= 1e9
+      ? `$${(stock.market_cap / 1e9).toFixed(1)}B`
+      : `$${(stock.market_cap / 1e6).toFixed(0)}M`
+    : null;
+
+  const desc = stock.description ?? "";
+  const sentences = desc.match(/[^.!?]+[.!?]+/g) ?? [];
+  const short = sentences.slice(0, 3).join(" ").trim();
+  const hasMore = sentences.length > 3;
+
+  return (
+    <div className="rounded-xl p-5" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)" }}>
+      {/* Quick facts row */}
+      <div className="flex flex-wrap gap-4 mb-4 text-sm" style={{ color: "var(--muted)" }}>
+        {stock.industry && (
+          <span className="flex items-center gap-1.5">
+            <Building2 size={13} /> {stock.industry}
+          </span>
+        )}
+        {stock.country && (
+          <span className="flex items-center gap-1.5">
+            <MapPin size={13} /> {stock.country}
+          </span>
+        )}
+        {stock.employees && (
+          <span className="flex items-center gap-1.5">
+            <Users size={13} /> {stock.employees.toLocaleString()} employees
+          </span>
+        )}
+        {mcap && (
+          <span className="flex items-center gap-1.5">
+            Market cap {mcap}
+          </span>
+        )}
+        {stock.website && (
+          <a href={stock.website} target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-1 hover:underline"
+            style={{ color: "var(--accent)" }}>
+            <ExternalLink size={12} />
+            {stock.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
+          </a>
+        )}
+      </div>
+
+      {/* Description */}
+      {desc && (
+        <div>
+          <p className="text-sm leading-relaxed" style={{ color: "var(--text)" }}>
+            {expanded ? desc : short}
+          </p>
+          {hasMore && (
+            <button
+              onClick={() => setExpanded(e => !e)}
+              className="mt-2 text-xs font-medium"
+              style={{ color: "var(--accent)" }}>
+              {expanded ? "Show less" : "Read more"}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function StockDetail() {
   const { ticker = "" } = useParams<{ ticker: string }>();
@@ -79,6 +150,9 @@ export default function StockDetail() {
           </button>
         </div>
       </div>
+
+      {/* Company intro */}
+      <CompanyIntro stock={stock} />
 
       {/* YoY Financials — full width */}
       {loadingFin

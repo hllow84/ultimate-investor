@@ -9,6 +9,11 @@ class StockSummary(BaseModel):
     change_pct: float
     market_cap: Optional[float] = None
     sector: Optional[str] = None
+    industry: Optional[str] = None
+    country: Optional[str] = None
+    employees: Optional[int] = None
+    website: Optional[str] = None
+    description: Optional[str] = None
 
 
 class HealthScore(BaseModel):

@@ -5,6 +5,11 @@ export interface StockSummary {
   change_pct: number;
   market_cap?: number;
   sector?: string;
+  industry?: string;
+  country?: string;
+  employees?: number;
+  website?: string;
+  description?: string;
 }
 
 export interface HealthScore {
