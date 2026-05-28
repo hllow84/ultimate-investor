@@ -435,6 +435,19 @@ def scan_credit_spreads(force_refresh: bool = False) -> dict:
 
     after_hours = not _is_market_open()
 
+    # After hours: always serve cache if available — live bids are gone so a
+    # fresh scan would overwrite good data with near-empty results.
+    if after_hours and not force_refresh and _cache:
+        return {
+            "spreads": _cache[1],
+            "vix": _cache[2],
+            "vix_info": vix_label(_cache[2]),
+            "cached": True,
+            "after_hours": True,
+            "date": _cache[0],
+            "count": len(_cache[1]),
+        }
+
     if not force_refresh and _cache and _cache[0] == today_str:
         return {
             "spreads": _cache[1],
