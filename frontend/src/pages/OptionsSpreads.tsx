@@ -160,7 +160,7 @@ function TechBadge({ tech }: { tech?: TechSummary }) {
   const { signal, rsi, sma50_pct, sma200_pct } = tech;
   const sigColor = signal === "bullish" ? "var(--green)" : signal === "bearish" ? "var(--red)" : "var(--yellow)";
   const sigLabel = signal === "bullish" ? "▲ Bullish" : signal === "bearish" ? "▼ Bearish" : "● Neutral";
-  const fmt = (v: number | null, label: string) =>
+  const fmt = (v: number | null) =>
     v != null ? <span style={{ color: v > 0 ? "var(--green)" : "var(--red)" }}>{v > 0 ? "+" : ""}{v}%</span> : null;
   return (
     <div className="text-xs leading-snug">
@@ -168,8 +168,8 @@ function TechBadge({ tech }: { tech?: TechSummary }) {
       <p style={{ color: "var(--muted)" }}>
         RSI <span style={{ color: rsi > 70 ? "var(--red)" : rsi < 30 ? "var(--green)" : "var(--text)" }}>{rsi}</span>
       </p>
-      {sma50_pct != null && <p style={{ color: "var(--muted)" }}>50MA {fmt(sma50_pct, "")}</p>}
-      {sma200_pct != null && <p style={{ color: "var(--muted)" }}>200MA {fmt(sma200_pct, "")}</p>}
+      {sma50_pct != null && <p style={{ color: "var(--muted)" }}>50MA {fmt(sma50_pct)}</p>}
+      {sma200_pct != null && <p style={{ color: "var(--muted)" }}>200MA {fmt(sma200_pct)}</p>}
     </div>
   );
 }
