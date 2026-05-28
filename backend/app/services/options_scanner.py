@@ -59,19 +59,13 @@ def _bs_delta(S: float, K: float, T: float, r: float, sigma: float, option_type:
 # ---------------------------------------------------------------------------
 
 def _bid_price(row) -> float:
-    """Price you receive when selling — use for short leg credit."""
-    bid = float(row.get("bid", 0) or 0)
-    if bid > 0:
-        return bid
-    return float(row.get("lastPrice", 0) or 0)
+    """Price you receive when selling. Returns 0.0 if no live bid — caller checks MIN_BID."""
+    return float(row.get("bid", 0) or 0)
 
 
 def _ask_price(row) -> float:
-    """Price you pay when buying — use for long leg cost."""
-    ask = float(row.get("ask", 0) or 0)
-    if ask > 0:
-        return ask
-    return float(row.get("lastPrice", 0) or 0)
+    """Price you pay when buying. Returns 0.0 if no live ask."""
+    return float(row.get("ask", 0) or 0)
 
 
 def _is_market_open() -> bool:
