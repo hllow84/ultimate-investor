@@ -428,6 +428,48 @@ def vix_label(vix: float) -> dict:
 _cache: Optional[tuple[str, list[dict], float]] = None
 
 
+def scan_single_ticker(sym: str) -> dict:
+    """Run a live spread scan for one ticker. No caching — always fresh."""
+    sym = sym.upper().strip()
+    today_str = date.today().isoformat()
+    macro = _macro_events(window_days=50)
+    try:
+        ticker = yf.Ticker(sym)
+        S = float(ticker.fast_info.last_price)
+        if S <= 0:
+            return {"error": f"No price data for {sym}", "spreads": []}
+
+        options_dates = list(ticker.options)
+        if not options_dates:
+            return {"error": f"{sym} has no options chain", "spreads": []}
+
+        expiry = _find_target_expiry(options_dates)
+        if not expiry:
+            return {"error": f"{sym} has no expiry in the 30–45 DTE window", "spreads": []}
+
+        expiry_date = datetime.strptime(expiry, "%Y-%m-%d").date()
+        dte = (expiry_date - date.today()).days
+        chain = ticker.option_chain(expiry)
+        hv30 = _compute_hv30(ticker)
+        spreads = _build_spreads(sym, S, expiry, dte, chain, hv30)
+
+        window = dte + 2
+        stock_evts = _stock_events(ticker, window)
+        macro_evts = [e for e in macro if e["days_away"] <= window]
+        all_evts = sorted(stock_evts + macro_evts, key=lambda x: x["days_away"])
+        for s in spreads:
+            s["events"] = all_evts
+
+        if not spreads:
+            return {"error": f"{sym} passed filters but no spreads met the criteria (check liquidity / DTE)", "spreads": []}
+
+        return {"spreads": spreads, "ticker": sym, "date": today_str, "after_hours": not _is_market_open()}
+
+    except Exception as e:
+        log.warning("scan_single_ticker %s: %s", sym, e)
+        return {"error": f"Failed to scan {sym}: {e}", "spreads": []}
+
+
 def scan_credit_spreads(force_refresh: bool = False) -> dict:
     """Return cached or freshly computed spread opportunities."""
     global _cache

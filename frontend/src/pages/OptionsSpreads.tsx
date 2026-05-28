@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { RefreshCw, TrendingDown, TrendingUp, AlertTriangle, Info, ChevronRight, ChevronDown } from "lucide-react";
+import { RefreshCw, TrendingDown, TrendingUp, AlertTriangle, Info, ChevronRight, ChevronDown, Search, X } from "lucide-react";
 import { Link } from "react-router-dom";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -350,6 +350,125 @@ function SpreadRows({ s, expanded, onToggle }: {
   );
 }
 
+// ─── Custom ticker scanner ────────────────────────────────────────────────────
+
+interface CustomResult {
+  ticker: string;
+  spreads: Spread[];
+  error?: string;
+  after_hours?: boolean;
+}
+
+function CustomTickerScanner({ expandedSet, onToggle }: {
+  expandedSet: Set<string>;
+  onToggle: (key: string) => void;
+}) {
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [results, setResults] = useState<CustomResult[]>([]);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  async function handleScan(e: React.FormEvent) {
+    e.preventDefault();
+    const sym = input.trim().toUpperCase();
+    if (!sym) return;
+    if (results.find(r => r.ticker === sym)) {
+      setInput("");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/options/spreads/ticker/${sym}`);
+      const data = await res.json();
+      if (res.status === 400) {
+        setResults(prev => [...prev, { ticker: sym, spreads: [], error: data.detail }]);
+      } else {
+        setResults(prev => [...prev, { ticker: sym, spreads: data.spreads ?? [], error: data.error, after_hours: data.after_hours }]);
+      }
+    } catch {
+      setResults(prev => [...prev, { ticker: sym, spreads: [], error: "Network error" }]);
+    }
+    setLoading(false);
+    setInput("");
+    inputRef.current?.focus();
+  }
+
+  function removeResult(ticker: string) {
+    setResults(prev => prev.filter(r => r.ticker !== ticker));
+  }
+
+  const allCustomSpreads = results.flatMap(r => r.spreads);
+
+  return (
+    <div className="rounded-xl p-5" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)" }}>
+      <p className="text-sm font-semibold mb-3" style={{ color: "var(--text)" }}>Scan a custom ticker</p>
+      <form onSubmit={handleScan} className="flex gap-2">
+        <div className="relative flex-1">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "var(--muted)" }} />
+          <input
+            ref={inputRef}
+            value={input}
+            onChange={e => setInput(e.target.value.toUpperCase())}
+            placeholder="e.g. COIN, PLTR, RKLB"
+            className="w-full pl-8 pr-3 py-2 rounded-lg text-sm outline-none"
+            style={{ backgroundColor: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)" }}
+          />
+        </div>
+        <button type="submit" disabled={loading || !input.trim()}
+          className="px-4 py-2 rounded-lg text-sm font-medium"
+          style={{ backgroundColor: "var(--accent)", color: "#fff", opacity: loading || !input.trim() ? 0.5 : 1, cursor: loading || !input.trim() ? "not-allowed" : "pointer" }}>
+          {loading ? <RefreshCw size={14} className="animate-spin" /> : "Scan"}
+        </button>
+      </form>
+
+      {/* Scanned ticker chips */}
+      {results.length > 0 && (
+        <div className="flex flex-wrap gap-2 mt-3">
+          {results.map(r => (
+            <span key={r.ticker} className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full"
+              style={{
+                backgroundColor: r.error ? "var(--red)22" : r.spreads.length > 0 ? "var(--green)22" : "var(--muted)22",
+                color: r.error ? "var(--red)" : r.spreads.length > 0 ? "var(--green)" : "var(--muted)",
+                border: "1px solid currentColor",
+              }}>
+              {r.ticker}
+              {r.error ? " — " + r.error : ` — ${r.spreads.length} spread${r.spreads.length !== 1 ? "s" : ""}`}
+              <button onClick={() => removeResult(r.ticker)} style={{ lineHeight: 1 }}>
+                <X size={11} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Results table */}
+      {allCustomSpreads.length > 0 && (
+        <div className="mt-4 rounded-lg overflow-auto" style={{ border: "1px solid var(--border)" }}>
+          <table className="w-full text-sm min-w-[1100px]">
+            <thead>
+              <tr style={{ borderBottom: "1px solid var(--border)" }}>
+                <th className="py-2 pl-3 pr-1 w-6" />
+                {["Ticker", "Strategy", "Price", "Strike / Δ", "Net Credit", "Max Risk", "ROI %", "Buffer %", "±1σ", "DTE", "IV", "Events"].map((h, i) => (
+                  <th key={i} className={`py-2 px-2 text-xs font-semibold uppercase tracking-wider ${i > 1 ? "text-right" : "text-left"}`}
+                    style={{ color: "var(--muted)" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {allCustomSpreads.map((s, i) => {
+                const key = `custom-${s.ticker}-${s.strategy}`;
+                return (
+                  <SpreadRows key={`${key}-${i}`} s={s} expanded={expandedSet.has(key)} onToggle={() => onToggle(key)} />
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 type FilterType = "all" | "put" | "call";
@@ -483,6 +602,11 @@ export default function OptionsSpreads() {
             {sorted.length} spread{sorted.length !== 1 ? "s" : ""} · click row to expand widths
           </span>
         </div>
+      )}
+
+      {/* Custom ticker scanner */}
+      {!isLoading && data && (
+        <CustomTickerScanner expandedSet={expanded} onToggle={toggleExpand} />
       )}
 
       {/* Table */}
