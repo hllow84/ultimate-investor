@@ -27,6 +27,7 @@ class HealthScore(BaseModel):
 class ValuationResult(BaseModel):
     ticker: str
     dcf_value: Optional[float] = None
+    ev_ebitda_value: Optional[float] = None   # fair value from EV/EBITDA method
     pe_ratio: Optional[float] = None
     forward_pe: Optional[float] = None
     ev_ebitda: Optional[float] = None

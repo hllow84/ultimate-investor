@@ -8,14 +8,17 @@ const verdictColor = {
 
 export default function ValuationCard({ data }: { data: ValuationResult }) {
   const color = verdictColor[data.verdict];
+  const estimates = [
+    { label: "DCF Value", value: data.dcf_value ? `$${data.dcf_value.toFixed(2)}` : "—", weight: "2×" },
+    { label: "EV/EBITDA Value", value: data.ev_ebitda_value ? `$${data.ev_ebitda_value.toFixed(2)}` : "—", weight: "2×" },
+    { label: "Analyst Target", value: data.analyst_target ? `$${data.analyst_target.toFixed(2)}` : "—", weight: "3×" },
+  ];
   const metrics = [
-    { label: "DCF Value", value: data.dcf_value ? `$${data.dcf_value.toFixed(2)}` : "—" },
     { label: "Trailing P/E", value: data.pe_ratio ? data.pe_ratio.toFixed(1) : "—" },
     { label: "Forward P/E", value: data.forward_pe ? data.forward_pe.toFixed(1) : "—" },
     { label: "EV/EBITDA", value: data.ev_ebitda ? data.ev_ebitda.toFixed(1) : "—" },
     { label: "PEG Ratio", value: data.peg_ratio ? data.peg_ratio.toFixed(2) : "—" },
     { label: "Price/Book", value: data.price_to_book ? data.price_to_book.toFixed(2) : "—" },
-    { label: "Analyst Target", value: data.analyst_target ? `$${data.analyst_target.toFixed(2)}` : "—" },
   ];
 
   return (
@@ -40,6 +43,23 @@ export default function ValuationCard({ data }: { data: ValuationResult }) {
         </div>
       </div>
 
+      {/* Valuation method estimates */}
+      <div className="mb-4">
+        <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted)" }}>
+          Method Estimates <span className="font-normal normal-case">(weighted avg)</span>
+        </p>
+        <div className="grid grid-cols-3 gap-2">
+          {estimates.map(({ label, value, weight }) => (
+            <div key={label} className="rounded-lg p-2" style={{ backgroundColor: "var(--bg)", border: "1px solid var(--border)" }}>
+              <p className="text-xs" style={{ color: "var(--muted)" }}>{label}</p>
+              <p className="text-sm font-semibold">{value}</p>
+              <p className="text-xs" style={{ color: "var(--muted)" }}>weight {weight}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Raw multiples */}
       <div className="grid grid-cols-2 gap-3">
         {metrics.map(({ label, value }) => (
           <div key={label}>

@@ -23,6 +23,7 @@ export interface HealthScore {
 export interface ValuationResult {
   ticker: string;
   dcf_value?: number;
+  ev_ebitda_value?: number;
   pe_ratio?: number;
   forward_pe?: number;
   ev_ebitda?: number;
