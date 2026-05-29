@@ -1,7 +1,7 @@
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Star, ExternalLink, Users, MapPin, Building2, BarChart2 } from "lucide-react";
+import { Star, ExternalLink, BarChart2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   useStockSummary, useHealthScore, useValuation, useMoat,
@@ -18,67 +18,73 @@ import FinancialsChart from "@/components/stock/FinancialsChart";
 import MomentumCard from "@/components/stock/MomentumCard";
 import InsiderTradesCard from "@/components/stock/InsiderTrades";
 
+function fmtMCap(v: number): string {
+  if (v >= 1e12) return `$${(v / 1e12).toFixed(2)}T`;
+  if (v >= 1e9)  return `$${(v / 1e9).toFixed(1)}B`;
+  return `$${(v / 1e6).toFixed(0)}M`;
+}
+
+function StatBox({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-0.5 min-w-0">
+      <span className="text-xs uppercase tracking-wider" style={{ color: "var(--muted)" }}>{label}</span>
+      <span className="text-sm font-semibold truncate" style={{ color: "var(--text)" }}>{value}</span>
+    </div>
+  );
+}
+
 function CompanyIntro({ stock }: { stock: import("@/types").StockSummary }) {
   const [expanded, setExpanded] = useState(false);
 
-  const mcap = stock.market_cap
-    ? stock.market_cap >= 1e12
-      ? `$${(stock.market_cap / 1e12).toFixed(2)}T`
-      : stock.market_cap >= 1e9
-      ? `$${(stock.market_cap / 1e9).toFixed(1)}B`
-      : `$${(stock.market_cap / 1e6).toFixed(0)}M`
-    : null;
-
   const desc = stock.description ?? "";
-  const sentences = desc.match(/[^.!?]+[.!?]+/g) ?? [];
-  const short = sentences.slice(0, 3).join(" ").trim();
-  const hasMore = sentences.length > 3;
+  // Split on sentence boundaries: punctuation followed by whitespace + capital letter
+  const sentences = desc.split(/(?<=[.!?])\s+(?=[A-Z])/);
+  const firstSentence = sentences[0]?.trim() ?? "";
+  const hasMore = sentences.length > 1;
+
+  const stats: { label: string; value: string }[] = [
+    stock.industry   ? { label: "Industry",    value: stock.industry }                          : null,
+    stock.sector     ? { label: "Sector",      value: stock.sector }                            : null,
+    stock.country    ? { label: "Country",     value: stock.country }                           : null,
+    stock.employees  ? { label: "Employees",   value: stock.employees.toLocaleString() }        : null,
+    stock.market_cap ? { label: "Market Cap",  value: fmtMCap(stock.market_cap) }               : null,
+  ].filter(Boolean) as { label: string; value: string }[];
 
   return (
     <div className="rounded-xl p-5" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)" }}>
-      {/* Quick facts row */}
-      <div className="flex flex-wrap gap-4 mb-4 text-sm" style={{ color: "var(--muted)" }}>
-        {stock.industry && (
-          <span className="flex items-center gap-1.5">
-            <Building2 size={13} /> {stock.industry}
-          </span>
-        )}
-        {stock.country && (
-          <span className="flex items-center gap-1.5">
-            <MapPin size={13} /> {stock.country}
-          </span>
-        )}
-        {stock.employees && (
-          <span className="flex items-center gap-1.5">
-            <Users size={13} /> {stock.employees.toLocaleString()} employees
-          </span>
-        )}
-        {mcap && (
-          <span className="flex items-center gap-1.5">
-            Market cap {mcap}
-          </span>
-        )}
-        {stock.website && (
-          <a href={stock.website} target="_blank" rel="noopener noreferrer"
-            className="flex items-center gap-1 hover:underline"
-            style={{ color: "var(--accent)" }}>
-            <ExternalLink size={12} />
-            {stock.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
-          </a>
-        )}
-      </div>
 
-      {/* Description */}
+      {/* Stat boxes row */}
+      {stats.length > 0 && (
+        <div className="flex flex-wrap gap-x-8 gap-y-3 mb-4 pb-4" style={{ borderBottom: "1px solid var(--border)" }}>
+          {stats.map(s => <StatBox key={s.label} label={s.label} value={s.value} />)}
+          {stock.website && (
+            <div className="flex flex-col gap-0.5">
+              <span className="text-xs uppercase tracking-wider" style={{ color: "var(--muted)" }}>Website</span>
+              <a
+                href={stock.website} target="_blank" rel="noopener noreferrer"
+                className="text-sm font-semibold flex items-center gap-1 hover:underline"
+                style={{ color: "var(--accent)" }}
+              >
+                {stock.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
+                <ExternalLink size={11} />
+              </a>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Description — 1 sentence by default */}
       {desc && (
         <div>
-          <p className="text-sm leading-relaxed" style={{ color: "var(--text)" }}>
-            {expanded ? desc : short}
+          <p className="text-sm leading-relaxed" style={{ color: "var(--muted)" }}>
+            {expanded ? desc : firstSentence}
           </p>
           {hasMore && (
             <button
               onClick={() => setExpanded(e => !e)}
-              className="mt-2 text-xs font-medium"
-              style={{ color: "var(--accent)" }}>
+              className="mt-1.5 text-xs font-medium"
+              style={{ color: "var(--accent)" }}
+            >
               {expanded ? "Show less" : "Read more"}
             </button>
           )}
