@@ -31,23 +31,34 @@ class HealthScore(BaseModel):
 
 class ValuationResult(BaseModel):
     ticker: str
-    # Method estimates
-    dcf_value: Optional[float] = None
+    current_price: float = 0.0
+    # ── Core methods (used in weighted average) ──────────────────────────────
+    dcf_value: Optional[float] = None           # 10-yr 2-stage DCF (operating CF)
     ev_ebitda_value: Optional[float] = None
-    sticker_price: Optional[float] = None     # Phil Town / Rule #1
-    graham_number_value: Optional[float] = None  # Ben Graham √(22.5 × EPS × BVPS)
-    lynch_fair_value: Optional[float] = None  # Peter Lynch EPS × growth%
+    sticker_price: Optional[float] = None       # Phil Town Rule #1
+    graham_number_value: Optional[float] = None # Ben Graham √(22.5 × EPS × BVPS)
+    lynch_fair_value: Optional[float] = None    # Peter Lynch EPS × growth%
     analyst_target: Optional[float] = None
-    forward_pe_value: Optional[float] = None   # Forward EPS × sector P/E
-    trailing_pe_value: Optional[float] = None  # Trailing EPS × sector P/E
-    pb_value: Optional[float] = None           # Book value × sector P/B multiple
-    # Raw market multiples
+    forward_pe_value: Optional[float] = None    # Forward EPS × sector P/E
+    trailing_pe_value: Optional[float] = None   # Trailing EPS × sector P/E
+    pb_value: Optional[float] = None            # Book value × sector P/B
+    # ── Extended DCF methods ─────────────────────────────────────────────────
+    dcf_20_value: Optional[float] = None        # 20-yr DCF using operating CF
+    dfcf_20_value: Optional[float] = None       # 20-yr DCF using free CF
+    dni_20_value: Optional[float] = None        # 20-yr DCF using net income
+    dfcf_terminal_value: Optional[float] = None # Gordon Growth Model on FCF
+    # ── Ratio-based methods ──────────────────────────────────────────────────
+    ps_ratio_value: Optional[float] = None      # Revenue/share × sector P/S
+    pe_nri_value: Optional[float] = None        # Trailing EPS × mean sector P/E
+    psg_value: Optional[float] = None           # Rev/share × rev-growth% (PSG=1)
+    peg_nri_value: Optional[float] = None       # Trailing EPS × earn-growth% (PEG=1)
+    # ── Raw market multiples ─────────────────────────────────────────────────
     pe_ratio: Optional[float] = None
     forward_pe: Optional[float] = None
     ev_ebitda: Optional[float] = None
     peg_ratio: Optional[float] = None
     price_to_book: Optional[float] = None
-    # Composite output
+    # ── Composite output ─────────────────────────────────────────────────────
     fair_value_estimate: float
     margin_of_safety_price: Optional[float] = None  # FV × 0.75 — Adam Khoo buy zone
     strong_buy_price: Optional[float] = None         # FV × 0.50 — Buffett/Phil Town

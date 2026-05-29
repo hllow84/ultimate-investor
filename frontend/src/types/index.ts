@@ -27,6 +27,8 @@ export interface HealthScore {
 
 export interface ValuationResult {
   ticker: string;
+  current_price: number;
+  // Core methods
   dcf_value?: number;
   ev_ebitda_value?: number;
   sticker_price?: number;
@@ -36,11 +38,23 @@ export interface ValuationResult {
   forward_pe_value?: number;
   trailing_pe_value?: number;
   pb_value?: number;
+  // Extended DCF
+  dcf_20_value?: number;
+  dfcf_20_value?: number;
+  dni_20_value?: number;
+  dfcf_terminal_value?: number;
+  // Ratio-based
+  ps_ratio_value?: number;
+  pe_nri_value?: number;
+  psg_value?: number;
+  peg_nri_value?: number;
+  // Raw multiples
   pe_ratio?: number;
   forward_pe?: number;
   ev_ebitda?: number;
   peg_ratio?: number;
   price_to_book?: number;
+  // Composite
   fair_value_estimate: number;
   margin_of_safety_price?: number;
   strong_buy_price?: number;

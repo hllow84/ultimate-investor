@@ -45,6 +45,21 @@ SECTOR_EV_EBITDA = {
     "Utilities": 10,
 }
 
+# Sector-specific Price/Sales multiples (trailing 12m revenue)
+SECTOR_PS = {
+    "Technology": 6.0,
+    "Healthcare": 3.5,
+    "Financial Services": 2.0,
+    "Consumer Cyclical": 1.2,
+    "Consumer Defensive": 1.5,
+    "Industrials": 1.5,
+    "Energy": 1.0,
+    "Basic Materials": 1.2,
+    "Real Estate": 5.0,
+    "Communication Services": 2.5,
+    "Utilities": 1.5,
+}
+
 # Sector-specific DCF discount rates
 SECTOR_DISCOUNT = {
     "Technology": 0.10,
@@ -94,6 +109,18 @@ def compute_valuation(ticker: str, financials: dict) -> ValuationResult:
     graham_val   = graham_number_value(info)
     lynch_val    = lynch_fair_value(info)
 
+    # Extended DCF methods
+    dcf_20_val          = dcf_20_fair_value(info, use="ocf")
+    dfcf_20_val         = dcf_20_fair_value(info, use="fcf")
+    dni_20_val          = dcf_20_fair_value(info, use="ni")
+    dfcf_terminal_val   = dfcf_terminal_fair_value(info)
+
+    # Ratio-based methods
+    ps_val     = ps_ratio_fair_value(info)
+    pe_nri_val = pe_nri_fair_value(info)
+    psg_val    = psg_fair_value(info)
+    peg_nri_val = peg_nri_fair_value(info)
+
     # Weighted average — drop estimates outside 20%–500% of market price
     candidates: list[tuple[float | None, int]] = [
         (analyst_target, METHOD_WEIGHTS["analyst_target"]),
@@ -126,22 +153,39 @@ def compute_valuation(ticker: str, financials: dict) -> ValuationResult:
     else:
         verdict = "fairly valued"
 
+    def _r(v: float | None) -> float | None:
+        return round(v, 2) if v else None
+
     return ValuationResult(
         ticker=ticker,
+        current_price=price,
+        # Core methods (weighted average)
         dcf_value=dcf_val,
         ev_ebitda_value=ev_val,
         sticker_price=sticker_val,
         graham_number_value=graham_val,
         lynch_fair_value=lynch_val,
+        analyst_target=_r(analyst_target),
+        forward_pe_value=_r(fwd_pe_val),
+        trailing_pe_value=_r(trail_pe_val),
+        pb_value=_r(pb_val),
+        # Extended DCF methods
+        dcf_20_value=_r(dcf_20_val),
+        dfcf_20_value=_r(dfcf_20_val),
+        dni_20_value=_r(dni_20_val),
+        dfcf_terminal_value=_r(dfcf_terminal_val),
+        # Ratio-based methods
+        ps_ratio_value=_r(ps_val),
+        pe_nri_value=_r(pe_nri_val),
+        psg_value=_r(psg_val),
+        peg_nri_value=_r(peg_nri_val),
+        # Raw multiples
         pe_ratio=pe,
         forward_pe=forward_pe,
         ev_ebitda=ev_ebitda,
         peg_ratio=peg,
         price_to_book=pb,
-        analyst_target=round(analyst_target, 2) if analyst_target else None,
-        forward_pe_value=round(fwd_pe_val, 2) if fwd_pe_val else None,
-        trailing_pe_value=round(trail_pe_val, 2) if trail_pe_val else None,
-        pb_value=round(pb_val, 2) if pb_val else None,
+        # Composite
         fair_value_estimate=fair_value,
         margin_of_safety_price=round(fair_value * 0.75, 2) if fair_value else None,
         strong_buy_price=round(fair_value * 0.50, 2) if fair_value else None,
@@ -292,3 +336,142 @@ def ev_ebitda_fair_value(info: dict) -> float | None:
     if equity <= 0:
         return None
     return round(equity / float(shares), 2)
+
+
+# ---------------------------------------------------------------------------
+# Extended DCF methods (20-year horizon)
+# ---------------------------------------------------------------------------
+
+def _dcf_20(cash_flow: float, shares: float, info: dict) -> float | None:
+    """
+    Shared 20-year 2-stage DCF engine.
+    Stage 1 (yr 1-10): analyst growth rate, capped 2–25%.
+    Stage 2 (yr 11-20): growth fades linearly to 3% terminal rate.
+    Terminal value discounted from year 20.
+    """
+    if cash_flow <= 0 or shares <= 0:
+        return None
+    raw_growth    = info.get("earningsGrowth") or info.get("revenueGrowth") or 0.05
+    g1            = max(0.02, min(float(raw_growth), 0.25))
+    sector        = info.get("sector", "")
+    discount_rate = SECTOR_DISCOUNT.get(sector, 0.10)
+    terminal_g    = 0.03
+
+    pv = 0.0
+    cf = float(cash_flow)
+
+    for i in range(1, 11):          # Stage 1: years 1–10
+        cf *= (1 + g1)
+        pv += cf / (1 + discount_rate) ** i
+
+    for i in range(11, 21):         # Stage 2: years 11–20, fade to terminal
+        frac = (20 - i) / 9         # 1.0 at i=11 → 0.0 at i=20
+        g2   = terminal_g + frac * (g1 - terminal_g)
+        cf  *= (1 + g2)
+        pv  += cf / (1 + discount_rate) ** i
+
+    terminal = (cf * (1 + terminal_g)) / (discount_rate - terminal_g)
+    pv += terminal / (1 + discount_rate) ** 20
+    return round(pv / shares, 2)
+
+
+def dcf_20_fair_value(info: dict, use: str = "ocf") -> float | None:
+    """
+    20-year DCF.  use='ocf' → operating cash flow,
+                  use='fcf' → free cash flow,
+                  use='ni'  → net income.
+    """
+    shares = float(info.get("sharesOutstanding") or 0)
+    if shares <= 0:
+        return None
+    if use == "ocf":
+        cf = float(info.get("operatingCashflow") or 0)
+    elif use == "fcf":
+        cf = float(info.get("freeCashflow") or 0)
+    else:  # ni
+        cf = float(info.get("netIncomeToCommon") or info.get("netIncome") or 0)
+    return _dcf_20(cf, shares, info)
+
+
+def dfcf_terminal_fair_value(info: dict) -> float | None:
+    """
+    Gordon Growth Model on FCF: FCF × (1 + g) / (r − g) per share.
+    Represents the present value of all future FCF as a perpetuity.
+    """
+    fcf    = float(info.get("freeCashflow") or 0)
+    shares = float(info.get("sharesOutstanding") or 0)
+    if fcf <= 0 or shares <= 0:
+        return None
+    sector = info.get("sector", "")
+    r      = SECTOR_DISCOUNT.get(sector, 0.10)
+    g      = 0.03
+    if r <= g:
+        return None
+    terminal = (fcf * (1 + g)) / (r - g)
+    return round(terminal / shares, 2)
+
+
+# ---------------------------------------------------------------------------
+# Ratio-based methods
+# ---------------------------------------------------------------------------
+
+def ps_ratio_fair_value(info: dict) -> float | None:
+    """
+    Revenue per share × sector mean P/S multiple.
+    Useful for pre-profit or low-margin companies.
+    """
+    revenue = float(info.get("totalRevenue") or 0)
+    shares  = float(info.get("sharesOutstanding") or 0)
+    if revenue <= 0 or shares <= 0:
+        return None
+    sector   = info.get("sector", "")
+    multiple = SECTOR_PS.get(sector, 2.0)
+    return round((revenue / shares) * multiple, 2)
+
+
+def pe_nri_fair_value(info: dict) -> float | None:
+    """
+    PE Without NRI: trailing EPS (best proxy for normalised earnings)
+    × sector mean historical P/E (85% of current sector multiple,
+    reflecting mean-reversion vs peak multiples).
+    """
+    eps = float(info.get("trailingEps") or 0)
+    if eps <= 0:
+        return None
+    sector     = info.get("sector", "")
+    mean_pe    = SECTOR_PE.get(sector, 20) * 0.85   # historical mean ≈ 85% of current sector multiple
+    return round(eps * mean_pe, 2)
+
+
+def psg_fair_value(info: dict) -> float | None:
+    """
+    PSG (Price/Sales/Growth) at PSG = 1.0:
+    Fair value = Revenue per share × revenue growth %.
+    Filters to 3–50% growth range where the ratio is meaningful.
+    """
+    revenue    = float(info.get("totalRevenue") or 0)
+    shares     = float(info.get("sharesOutstanding") or 0)
+    rev_growth = float(info.get("revenueGrowth") or 0)
+    if revenue <= 0 or shares <= 0 or rev_growth <= 0:
+        return None
+    growth_pct = rev_growth * 100
+    if not (3 <= growth_pct <= 50):
+        return None
+    return round((revenue / shares) * growth_pct, 2)
+
+
+def peg_nri_fair_value(info: dict) -> float | None:
+    """
+    PEG Without NRI at PEG = 1.0:
+    Fair value = trailing EPS × earnings growth %.
+    Uses trailing (normalised) EPS rather than forward.
+    5–50% growth range filter.
+    """
+    eps    = float(info.get("trailingEps") or 0)
+    growth = float(info.get("earningsGrowth") or 0)
+    if eps <= 0 or growth <= 0:
+        return None
+    growth_pct = growth * 100
+    if not (5 <= growth_pct <= 50):
+        return None
+    return round(eps * growth_pct, 2)
