@@ -73,19 +73,30 @@ function CompanyIntro({ stock }: { stock: import("@/types").StockSummary }) {
         </div>
       )}
 
-      {/* Description — 1 sentence by default */}
+      {/* Description */}
       {desc && (
         <div>
-          <p className="text-sm leading-relaxed" style={{ color: "var(--muted)" }}>
-            {expanded ? desc : firstSentence}
-          </p>
+          {expanded ? (
+            <ul className="flex flex-col gap-2">
+              {sentences.map((s, i) => (
+                <li key={i} className="flex gap-2.5 text-sm" style={{ color: "var(--muted)" }}>
+                  <span className="mt-1.5 w-1 h-1 rounded-full shrink-0" style={{ backgroundColor: "var(--muted)", opacity: 0.5 }} />
+                  <span className="leading-relaxed">{s.trim()}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm leading-relaxed" style={{ color: "var(--muted)" }}>
+              {firstSentence}
+            </p>
+          )}
           {hasMore && (
             <button
               onClick={() => setExpanded(e => !e)}
-              className="mt-1.5 text-xs font-medium"
+              className="mt-2 text-xs font-medium"
               style={{ color: "var(--accent)" }}
             >
-              {expanded ? "Show less" : "Read more"}
+              {expanded ? "Show less" : `Read more (${sentences.length - 1} more)`}
             </button>
           )}
         </div>
