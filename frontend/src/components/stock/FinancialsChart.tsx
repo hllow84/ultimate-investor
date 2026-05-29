@@ -32,6 +32,12 @@ const tooltipStyle = {
 
 const axisStyle = { fontSize: 10, fill: "var(--muted)" };
 
+function fmtBillions(v: number): string {
+  if (Math.abs(v) >= 1) return `$${v.toFixed(0)}B`;
+  if (Math.abs(v) >= 0.1) return `$${(v * 1000).toFixed(0)}M`;
+  return `$${(v * 1000).toFixed(1)}M`;
+}
+
 function MiniChart({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="p-4 rounded-xl" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)" }}>
@@ -111,8 +117,8 @@ function Charts({ p, isQuarterly }: { p: FinancialPeriod; isQuarterly: boolean }
         <ResponsiveContainer width="100%" height={130}>
           <BarChart data={revenueData} barSize={barSize} margin={{ top: 4, right: 4, left: leftMargin, bottom: 0 }}>
             <XAxis dataKey="l" tick={axisStyle} axisLine={false} tickLine={false} interval={xInterval} />
-            <YAxis tick={axisStyle} axisLine={false} tickLine={false} tickFormatter={v => `$${v.toFixed(0)}B`} />
-            <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [`$${v.toFixed(1)}B`, "Revenue"]} />
+            <YAxis tick={axisStyle} axisLine={false} tickLine={false} tickFormatter={fmtBillions} />
+            <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [fmtBillions(v), "Revenue"]} />
             <Bar dataKey="v" radius={[2, 2, 0, 0]}>
               {revenueData.map((d, i) => (
                 <Cell key={i} fill={
@@ -136,8 +142,8 @@ function Charts({ p, isQuarterly }: { p: FinancialPeriod; isQuarterly: boolean }
         <ResponsiveContainer width="100%" height={130}>
           <BarChart data={incomeData} barSize={barSize} margin={{ top: 4, right: 4, left: leftMargin, bottom: 0 }}>
             <XAxis dataKey="l" tick={axisStyle} axisLine={false} tickLine={false} interval={xInterval} />
-            <YAxis tick={axisStyle} axisLine={false} tickLine={false} tickFormatter={v => `$${v.toFixed(0)}B`} />
-            <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [`$${v.toFixed(1)}B`, "Net Income"]} />
+            <YAxis tick={axisStyle} axisLine={false} tickLine={false} tickFormatter={fmtBillions} />
+            <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [fmtBillions(v), "Net Income"]} />
             <ReferenceLine y={0} stroke="var(--border)" />
             <Bar dataKey="ni" radius={[2, 2, 0, 0]}>
               {incomeData.map((d, i) => (
@@ -189,8 +195,8 @@ function Charts({ p, isQuarterly }: { p: FinancialPeriod; isQuarterly: boolean }
         <ResponsiveContainer width="100%" height={130}>
           <BarChart data={fcfData} barSize={barSize} margin={{ top: 4, right: 4, left: leftMargin, bottom: 0 }}>
             <XAxis dataKey="l" tick={axisStyle} axisLine={false} tickLine={false} interval={xInterval} />
-            <YAxis tick={axisStyle} axisLine={false} tickLine={false} tickFormatter={v => `$${v.toFixed(0)}B`} />
-            <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [`$${v.toFixed(1)}B`, "FCF"]} />
+            <YAxis tick={axisStyle} axisLine={false} tickLine={false} tickFormatter={fmtBillions} />
+            <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [fmtBillions(v), "FCF"]} />
             <ReferenceLine y={0} stroke="var(--border)" />
             <Bar dataKey="v" radius={[2, 2, 0, 0]}>
               {fcfData.map((d, i) => (

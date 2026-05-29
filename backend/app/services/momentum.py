@@ -1,9 +1,10 @@
 import yfinance as yf
 from app.models.schemas import TechnicalMomentum, PricePoint
+from app.services.stock_data import normalize_ticker
 
 
 def compute_momentum(ticker: str) -> TechnicalMomentum:
-    hist = yf.Ticker(ticker).history(period="1y")
+    hist = yf.Ticker(normalize_ticker(ticker)).history(period="1y")
     if hist.empty or len(hist) < 15:
         raise ValueError(f"Insufficient price history for {ticker}")
 

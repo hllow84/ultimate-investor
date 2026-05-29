@@ -201,7 +201,9 @@ export default function MomentumCard({ data }: { data: TechnicalMomentum }) {
                 className="text-xs font-medium"
                 style={{ color: data.pct_above_sma50 >= 0 ? "var(--green)" : "var(--red)" }}
               >
-                {data.pct_above_sma50 >= 0 ? "+" : ""}{data.pct_above_sma50.toFixed(1)}% above
+                {data.pct_above_sma50 >= 0
+                  ? `+${data.pct_above_sma50.toFixed(1)}% above`
+                  : `${Math.abs(data.pct_above_sma50).toFixed(1)}% below`}
               </p>
             </>
           ) : (
@@ -219,7 +221,9 @@ export default function MomentumCard({ data }: { data: TechnicalMomentum }) {
                 className="text-xs font-medium"
                 style={{ color: data.pct_above_sma200 >= 0 ? "var(--green)" : "var(--red)" }}
               >
-                {data.pct_above_sma200 >= 0 ? "+" : ""}{data.pct_above_sma200.toFixed(1)}% above
+                {data.pct_above_sma200 >= 0
+                  ? `+${data.pct_above_sma200.toFixed(1)}% above`
+                  : `${Math.abs(data.pct_above_sma200).toFixed(1)}% below`}
               </p>
             </>
           ) : (

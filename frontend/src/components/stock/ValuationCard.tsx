@@ -11,7 +11,7 @@ export default function ValuationCard({ data }: { data: ValuationResult }) {
 
   const methodEstimates = [
     { label: "Analyst Target",   value: data.analyst_target,    weight: "3×", source: "Consensus" },
-    { label: "Forward P/E",      value: data.fair_value_estimate, weight: "3×", source: "Sector mult" },
+    { label: "Forward P/E",      value: data.forward_pe_value,    weight: "3×", source: "Sector mult" },
     { label: "EV/EBITDA",        value: data.ev_ebitda_value,   weight: "2×", source: "Greenblatt" },
     { label: "DCF (2-stage)",    value: data.dcf_value,         weight: "2×", source: "Buffett" },
     { label: "Sticker Price",    value: data.sticker_price,     weight: "2×", source: "Phil Town" },

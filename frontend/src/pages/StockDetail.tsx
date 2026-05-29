@@ -1,7 +1,7 @@
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Star, ExternalLink, Users, MapPin, Building2 } from "lucide-react";
+import { Star, ExternalLink, Users, MapPin, Building2, BarChart2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   useStockSummary, useHealthScore, useValuation, useMoat,
@@ -133,6 +133,13 @@ export default function StockDetail() {
           <p className="text-lg font-medium" style={{ color: changeColor }}>
             {stock.change_pct >= 0 ? "+" : ""}{stock.change_pct.toFixed(2)}%
           </p>
+          <Link
+            to={`/compare?t=${t}`}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+            style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)", color: "var(--muted)" }}
+          >
+            <BarChart2 size={14} /> Compare
+          </Link>
           <button
             onClick={() => {
               if (!isAuthenticated) { navigate("/login"); return; }

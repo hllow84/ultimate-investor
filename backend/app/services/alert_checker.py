@@ -6,6 +6,7 @@ from email.message import EmailMessage
 import yfinance as yf
 
 from app.config import settings
+from app.services.stock_data import normalize_ticker
 from app.db.database import SessionLocal
 from app.db.models import Alert
 
@@ -53,7 +54,7 @@ def _fetch_prices(tickers: list[str]) -> dict[str, float]:
     prices: dict[str, float] = {}
     for ticker in tickers:
         try:
-            hist = yf.Ticker(ticker).history(period="1d")
+            hist = yf.Ticker(normalize_ticker(ticker)).history(period="1d")
             if not hist.empty:
                 prices[ticker] = float(hist["Close"].iloc[-1])
         except Exception:

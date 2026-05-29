@@ -38,6 +38,7 @@ class ValuationResult(BaseModel):
     graham_number_value: Optional[float] = None  # Ben Graham √(22.5 × EPS × BVPS)
     lynch_fair_value: Optional[float] = None  # Peter Lynch EPS × growth%
     analyst_target: Optional[float] = None
+    forward_pe_value: Optional[float] = None  # Forward EPS × sector P/E
     # Raw market multiples
     pe_ratio: Optional[float] = None
     forward_pe: Optional[float] = None

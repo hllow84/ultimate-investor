@@ -4,6 +4,7 @@ import yfinance as yf
 from datetime import datetime
 from app.config import settings
 from app.models.schemas import YoYFinancials, FinancialPeriod
+from app.services.stock_data import normalize_ticker
 
 EDGAR_BASE = "https://data.sec.gov"
 EDGAR_HEADERS = {"User-Agent": "Ultimate Investor hllow84@gmail.com"}
@@ -308,7 +309,7 @@ def _fmp_label(row: dict, quarterly: bool) -> str:
 # ── yfinance fallback ─────────────────────────────────────────────────────────
 
 def _yfinance_financials(ticker: str) -> YoYFinancials:
-    t = yf.Ticker(ticker)
+    t = yf.Ticker(normalize_ticker(ticker))
     return YoYFinancials(
         ticker=ticker,
         annual=_yf_period(t.income_stmt, t.cashflow, quarterly=False),

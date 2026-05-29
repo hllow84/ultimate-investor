@@ -33,6 +33,7 @@ export interface ValuationResult {
   graham_number_value?: number;
   lynch_fair_value?: number;
   analyst_target?: number;
+  forward_pe_value?: number;
   pe_ratio?: number;
   forward_pe?: number;
   ev_ebitda?: number;
