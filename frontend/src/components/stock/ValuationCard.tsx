@@ -15,8 +15,10 @@ export default function ValuationCard({ data }: { data: ValuationResult }) {
     { label: "EV/EBITDA",        value: data.ev_ebitda_value,   weight: "2×", source: "Greenblatt" },
     { label: "DCF (2-stage)",    value: data.dcf_value,         weight: "2×", source: "Buffett" },
     { label: "Sticker Price",    value: data.sticker_price,     weight: "2×", source: "Phil Town" },
-    { label: "Graham Number",    value: data.graham_number_value, weight: "1×", source: "Ben Graham" },
-    { label: "Lynch FV",         value: data.lynch_fair_value,  weight: "1×", source: "Peter Lynch" },
+    { label: "Graham Number",    value: data.graham_number_value,  weight: "1×", source: "Ben Graham" },
+    { label: "Lynch FV",         value: data.lynch_fair_value,    weight: "1×", source: "Peter Lynch" },
+    { label: "Trailing P/E",     value: data.trailing_pe_value,   weight: "1×", source: "Sector mult" },
+    { label: "Price / Book",     value: data.pb_value,            weight: "1×", source: "Sector P/B" },
   ].filter(m => m.value != null && m.value > 0);
 
   const multiples = [

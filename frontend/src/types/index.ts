@@ -34,6 +34,8 @@ export interface ValuationResult {
   lynch_fair_value?: number;
   analyst_target?: number;
   forward_pe_value?: number;
+  trailing_pe_value?: number;
+  pb_value?: number;
   pe_ratio?: number;
   forward_pe?: number;
   ev_ebitda?: number;

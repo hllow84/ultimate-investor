@@ -140,6 +140,8 @@ def compute_valuation(ticker: str, financials: dict) -> ValuationResult:
         price_to_book=pb,
         analyst_target=round(analyst_target, 2) if analyst_target else None,
         forward_pe_value=round(fwd_pe_val, 2) if fwd_pe_val else None,
+        trailing_pe_value=round(trail_pe_val, 2) if trail_pe_val else None,
+        pb_value=round(pb_val, 2) if pb_val else None,
         fair_value_estimate=fair_value,
         margin_of_safety_price=round(fair_value * 0.75, 2) if fair_value else None,
         strong_buy_price=round(fair_value * 0.50, 2) if fair_value else None,
