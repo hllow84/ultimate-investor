@@ -17,14 +17,8 @@ def generate_health_score(ticker: str, financials: dict) -> HealthScore:
         (profitability + debt + growth + efficiency + valuation + momentum + predictability) / 7, 1
     )
 
-    verdict = "strong" if overall >= 65 else "moderate" if overall >= 40 else "weak"
-    pred_label = "highly predictable" if predictability >= 70 else "moderately predictable" if predictability >= 45 else "unpredictable"
-    summary = (
-        f"{ticker} shows {verdict} financial health with an overall score of {overall}/100. "
-        f"Revenue and earnings are {pred_label} (predictability: {predictability}/100). "
-        f"{'Debt levels are well-managed.' if debt >= 60 else 'Debt levels warrant monitoring.'} "
-        f"AI narrative unlocks when ANTHROPIC_API_KEY is configured."
-    )
+    verdict = "Strong" if overall >= 65 else "Moderate" if overall >= 40 else "Weak"
+    summary = verdict
 
     return HealthScore(
         ticker=ticker,
