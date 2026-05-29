@@ -73,6 +73,15 @@ export function useMomentum(ticker: string) {
   });
 }
 
+export function useInsiderTrades(ticker: string) {
+  return useQuery({
+    queryKey: ["insider", ticker],
+    queryFn: () => api.insider.trades(ticker),
+    enabled: !!ticker,
+    staleTime: 1000 * 60 * 60 * 4, // 4h — EDGAR Form 4 data is slow-moving
+  });
+}
+
 export function useWatchlist() {
   const { isAuthenticated } = useAuth();
   return useQuery({

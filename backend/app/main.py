@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-from app.routers import stocks, analysis, watchlist, alerts, options, auth
+from app.routers import stocks, analysis, watchlist, alerts, options, auth, insider
 from app.db.database import engine, SessionLocal
 from app.db import models
 
@@ -143,6 +143,7 @@ app.include_router(analysis.router,  prefix="/api/analysis",  tags=["analysis"])
 app.include_router(watchlist.router, prefix="/api/watchlist", tags=["watchlist"])
 app.include_router(alerts.router,    prefix="/api/alerts",    tags=["alerts"])
 app.include_router(options.router,   prefix="/api/options",   tags=["options"])
+app.include_router(insider.router,   prefix="/api/insider",   tags=["insider"])
 
 
 @app.get("/")

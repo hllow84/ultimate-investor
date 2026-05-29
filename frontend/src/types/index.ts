@@ -119,6 +119,20 @@ export interface TechnicalMomentum {
   price_history: PricePoint[];
 }
 
+export interface InsiderTrade {
+  date: string;
+  filing_date: string;
+  name: string;
+  title: string;
+  transaction_type: "Buy" | "Sell" | "Award/Exercise" | "Disposition" | "Other";
+  transaction_code: string;
+  shares: number;
+  price?: number | null;
+  value?: number | null;
+  shares_owned?: number | null;
+  is_derivative: boolean;
+}
+
 export interface WatchlistItem {
   ticker: string;
   added_at?: string;

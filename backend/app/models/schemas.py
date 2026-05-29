@@ -142,6 +142,20 @@ class Alert(BaseModel):
     triggered_at: Optional[str] = None
 
 
+class InsiderTrade(BaseModel):
+    date: str
+    filing_date: str
+    name: str
+    title: str
+    transaction_type: str   # "Buy" | "Sell" | "Award/Exercise" | "Disposition" | "Other"
+    transaction_code: str
+    shares: int
+    price: Optional[float] = None
+    value: Optional[float] = None
+    shares_owned: Optional[int] = None
+    is_derivative: bool = False
+
+
 class UserCreate(BaseModel):
     email: str
     password: str

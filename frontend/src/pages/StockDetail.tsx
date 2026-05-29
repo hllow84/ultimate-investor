@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import {
   useStockSummary, useHealthScore, useValuation, useMoat,
   useSentiment, useValuationRange, useYoYFinancials, useWatchlist, useMomentum,
+  useInsiderTrades,
 } from "@/hooks/useStock";
 import { api } from "@/api/client";
 import HealthScoreCard from "@/components/stock/HealthScore";
@@ -15,6 +16,7 @@ import MoatCard from "@/components/stock/MoatAnalysis";
 import SentimentCard from "@/components/stock/SentimentBadge";
 import FinancialsChart from "@/components/stock/FinancialsChart";
 import MomentumCard from "@/components/stock/MomentumCard";
+import InsiderTradesCard from "@/components/stock/InsiderTrades";
 
 function CompanyIntro({ stock }: { stock: import("@/types").StockSummary }) {
   const [expanded, setExpanded] = useState(false);
@@ -101,6 +103,7 @@ export default function StockDetail() {
   const { data: moat, isLoading: loadingMoat } = useMoat(t);
   const { data: sentiment, isLoading: loadingSent } = useSentiment(t);
   const { data: momentum, isLoading: loadingMomentum } = useMomentum(t);
+  const { data: insider, isLoading: loadingInsider } = useInsiderTrades(t);
   const { data: watchlist = [] } = useWatchlist();
 
   const isWatched = watchlist.some((w) => w.ticker === t);
@@ -180,6 +183,7 @@ export default function StockDetail() {
         {loadingMoat      ? <CardSkeleton title="Investment Thesis" />      : moat       && <MoatCard data={moat} />}
         {loadingSent      ? <CardSkeleton title="News Sentiment" />         : sentiment  && <SentimentCard data={sentiment} />}
         {loadingMomentum  ? <CardSkeleton title="Technical Momentum" fullWidth /> : momentum && <MomentumCard data={momentum} />}
+        {loadingInsider   ? <CardSkeleton title="Insider Trades" fullWidth />     : insider  && insider.length > 0 && <InsiderTradesCard data={insider} />}
       </div>
     </div>
   );

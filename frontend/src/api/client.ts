@@ -7,6 +7,7 @@ import type {
   MoatAnalysis,
   SentimentResult,
   TechnicalMomentum,
+  InsiderTrade,
   WatchlistItem,
   Alert,
   Token,
@@ -67,6 +68,9 @@ export const api = {
     moat: (ticker: string) => get<MoatAnalysis>(`/analysis/${ticker}/moat`),
     sentiment: (ticker: string) => get<SentimentResult>(`/analysis/${ticker}/sentiment`),
     momentum: (ticker: string) => get<TechnicalMomentum>(`/analysis/${ticker}/momentum`),
+  },
+  insider: {
+    trades: (ticker: string) => get<InsiderTrade[]>(`/insider/${ticker}`),
   },
   watchlist: {
     list: () => get<WatchlistItem[]>(`/watchlist/`),
