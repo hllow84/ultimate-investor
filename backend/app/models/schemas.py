@@ -60,8 +60,8 @@ class ValuationResult(BaseModel):
     price_to_book: Optional[float] = None
     # ── Composite output ─────────────────────────────────────────────────────
     fair_value_estimate: float
-    margin_of_safety_price: Optional[float] = None  # FV × 0.75 — Adam Khoo buy zone
-    strong_buy_price: Optional[float] = None         # FV × 0.50 — Buffett/Phil Town
+    margin_of_safety_price: Optional[float] = None  # FV × 0.75 — 25% margin of safety
+    strong_buy_price: Optional[float] = None         # FV × 0.50 — 50% margin of safety
     upside_pct: float
     verdict: str  # "undervalued" | "fairly valued" | "overvalued"
 

@@ -106,16 +106,16 @@ export default function ValuationCard({ data }: { data: ValuationResult }) {
         <div className="flex gap-2 mb-5">
           {data.margin_of_safety_price && (
             <div className="flex-1 rounded-lg p-2 text-center" style={{ backgroundColor: "#22c55e18", border: "1px solid #22c55e33" }}>
-              <p className="text-xs" style={{ color: "var(--muted)" }}>Buy Zone (−25%)</p>
+              <p className="text-xs" style={{ color: "var(--muted)" }}>Buy Zone</p>
               <p className="text-sm font-bold" style={{ color: "var(--green)" }}>${data.margin_of_safety_price.toFixed(2)}</p>
-              <p className="text-xs" style={{ color: "var(--muted)" }}>Adam Khoo MOS</p>
+              <p className="text-xs font-medium" style={{ color: "var(--green)" }}>25% margin of safety</p>
             </div>
           )}
           {data.strong_buy_price && (
             <div className="flex-1 rounded-lg p-2 text-center" style={{ backgroundColor: "#3b82f618", border: "1px solid #3b82f633" }}>
-              <p className="text-xs" style={{ color: "var(--muted)" }}>Strong Buy (−50%)</p>
+              <p className="text-xs" style={{ color: "var(--muted)" }}>Strong Buy</p>
               <p className="text-sm font-bold" style={{ color: "#3b82f6" }}>${data.strong_buy_price.toFixed(2)}</p>
-              <p className="text-xs" style={{ color: "var(--muted)" }}>Buffett / Phil Town</p>
+              <p className="text-xs font-medium" style={{ color: "#3b82f6" }}>50% margin of safety</p>
             </div>
           )}
         </div>
