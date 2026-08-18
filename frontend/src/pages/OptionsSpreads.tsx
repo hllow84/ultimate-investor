@@ -519,7 +519,16 @@ export default function OptionsSpreads() {
 
   const { data, isLoading, error, refetch } = useQuery<SpreadsResponse>({
     queryKey: ["options-spreads", refreshKey],
-    queryFn: () => fetch(url).then(r => r.json()),
+    queryFn: async () => {
+      const res = await fetch(url);
+      // A 500 body is plain text, not JSON — reading it gives a usable message
+      // instead of an opaque "Unexpected token" parse error.
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(`Scanner returned ${res.status}${body ? `: ${body.slice(0, 200)}` : ""}`);
+      }
+      return res.json();
+    },
     staleTime: 30 * 60 * 1000,
   });
 
@@ -617,6 +626,9 @@ export default function OptionsSpreads() {
       {error && (
         <div className="rounded-xl p-6 text-center" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)" }}>
           <p style={{ color: "var(--red)" }}>Failed to load spreads. Make sure the backend is running.</p>
+          <p className="text-xs mt-2 font-mono" style={{ color: "var(--muted)" }}>
+            {error instanceof Error ? error.message : String(error)}
+          </p>
         </div>
       )}
 

@@ -58,14 +58,47 @@ def _bs_delta(S: float, K: float, T: float, r: float, sigma: float, option_type:
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _num(value, default: float = 0.0) -> float:
+    """
+    Coerce a chain cell to a finite float.
+
+    yfinance returns NaN (not None/0) for missing bid/ask. `x or 0` does NOT catch
+    that — bool(nan) is True — and every NaN comparison is False, so a NaN would
+    slip past the MIN_BID / <= 0 / MIN_ROI guards and poison the JSON response.
+    """
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return default
+    return f if math.isfinite(f) else default
+
+
 def _bid_price(row) -> float:
     """Price you receive when selling. Returns 0.0 if no live bid — caller checks MIN_BID."""
-    return float(row.get("bid", 0) or 0)
+    return _num(row.get("bid", 0))
 
 
 def _ask_price(row) -> float:
     """Price you pay when buying. Returns 0.0 if no live ask."""
-    return float(row.get("ask", 0) or 0)
+    return _num(row.get("ask", 0))
+
+
+def _json_safe(obj):
+    """
+    Recursively replace non-finite floats (NaN / ±inf) with None.
+
+    Starlette serialises responses with json.dumps(allow_nan=False), so a single
+    NaN anywhere raises ValueError and turns the whole endpoint into a 500 —
+    the frontend then shows "Failed to load spreads" even though 30+ spreads
+    were scanned fine. This is the last line of defence at the cache boundary.
+    """
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    if isinstance(obj, float) and not math.isfinite(obj):
+        return None
+    return obj
 
 
 def _is_market_open() -> bool:
@@ -123,7 +156,9 @@ def _width_variant(
 
     long_cands["_dist"] = (long_cands["strike"] - target_long).abs()
     long_row = long_cands.loc[long_cands["_dist"].idxmin()]
-    long_strike = float(long_row["strike"])
+    long_strike = _num(long_row["strike"])
+    if long_strike <= 0:
+        return None
     actual_width = round(abs(short_strike - long_strike), 2)
 
     # Reject if strike didn't get close to the target width
@@ -168,8 +203,8 @@ def _build_spreads(sym: str, S: float, expiry: str, dte: int, chain, hv30_pct: f
         # Compute BS delta
         deltas = []
         for _, row in df.iterrows():
-            K = float(row["strike"])
-            iv = float(row.get("impliedVolatility", 0) or 0)
+            K = _num(row["strike"])
+            iv = _num(row.get("impliedVolatility", 0))
             deltas.append(_bs_delta(S, K, T, RISK_FREE_RATE, iv, opt_type))
         df["_delta"] = deltas
 
@@ -187,19 +222,21 @@ def _build_spreads(sym: str, S: float, expiry: str, dte: int, chain, hv30_pct: f
         target_signed = -TARGET_DELTA if opt_type == "put" else TARGET_DELTA
         cands["_diff"] = (cands["_delta"] - target_signed).abs()
         short_row = cands.loc[cands["_diff"].idxmin()]
-        short_strike = float(short_row["strike"])
+        short_strike = _num(short_row["strike"])
         short_premium = _bid_price(short_row)  # you sell the short — receive bid
         short_bid = short_premium
-        short_delta_abs = round(abs(float(short_row["_delta"])), 3)
+        short_delta_abs = round(abs(_num(short_row["_delta"])), 3)
 
-        if short_bid < MIN_BID or short_premium <= 0:
+        # _num() already collapses NaN to 0.0, so these guards now bite
+        if short_strike <= 0 or short_bid < MIN_BID or short_premium <= 0:
             continue
 
         # IV / move metrics (same for all widths — depends on short leg only)
-        iv_decimal = float(short_row.get("impliedVolatility", 0) or 0)
+        iv_decimal = _num(short_row.get("impliedVolatility", 0))
         iv_pct = round(iv_decimal * 100, 1)
         exp_move_pct = round(iv_decimal * math.sqrt(T) * 100, 1) if iv_decimal > 0 else 0.0
         exp_move_dollar = round(S * iv_decimal * math.sqrt(T), 2) if iv_decimal > 0 else 0.0
+        hv30_pct = _num(hv30_pct)
         hv30_decimal = hv30_pct / 100.0
         hv30_move_pct = round(hv30_decimal * math.sqrt(T) * 100, 1) if hv30_pct > 0 else 0.0
         hv30_move_dollar = round(S * hv30_decimal * math.sqrt(T), 2) if hv30_pct > 0 else 0.0
@@ -446,7 +483,7 @@ def _compute_history_metrics(ticker_obj) -> tuple[float, dict]:
 def get_vix() -> float:
     try:
         info = yf.Ticker("^VIX").fast_info
-        return round(float(info.last_price), 2)
+        return round(_num(info.last_price), 2)
     except Exception as e:
         log.warning("VIX fetch failed: %s", e)
         return 0.0
@@ -496,7 +533,7 @@ def scan_single_ticker(sym: str) -> dict:
     macro = _macro_events(window_days=50)
     try:
         ticker = yf.Ticker(sym)
-        S = float(ticker.fast_info.last_price)
+        S = _num(ticker.fast_info.last_price)
         if S <= 0:
             return {"error": f"No price data for {sym}", "spreads": []}
 
@@ -513,6 +550,7 @@ def scan_single_ticker(sym: str) -> dict:
         chain = ticker.option_chain(expiry)
         hv30, tech = _compute_history_metrics(ticker)
         spreads = _build_spreads(sym, S, expiry, dte, chain, hv30)
+        spreads = [s for s in spreads if _num(s.get("roi_pct")) > 0]
 
         window = dte + 2
         stock_evts = _stock_events(ticker, window)
@@ -525,7 +563,7 @@ def scan_single_ticker(sym: str) -> dict:
         if not spreads:
             return {"error": f"{sym} passed filters but no spreads met the criteria (check liquidity / DTE)", "spreads": []}
 
-        return {"spreads": spreads, "ticker": sym, "date": today_str, "after_hours": not _is_market_open()}
+        return _json_safe({"spreads": spreads, "ticker": sym, "date": today_str, "after_hours": not _is_market_open()})
 
     except Exception as e:
         log.warning("scan_single_ticker %s: %s", sym, e)
@@ -605,6 +643,9 @@ def scan_credit_spreads(force_refresh: bool = False) -> dict:
         except Exception as e:
             log.warning("Skipping %s: %s", sym, e)
 
+    # Drop any spread with unusable pricing, then make the payload JSON-safe
+    all_spreads = [s for s in all_spreads if _num(s.get("roi_pct")) > 0]
+    all_spreads = _json_safe(all_spreads)
     all_spreads.sort(key=lambda x: x["roi_pct"], reverse=True)
 
     # Don't overwrite a good cache with an empty scan (e.g. after-hours bid=0)
