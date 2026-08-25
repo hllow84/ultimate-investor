@@ -19,6 +19,21 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/**
+ * The 1280px reading column suits every page except the spread scanner, whose
+ * dense multi-column table would otherwise be stuck in permanent horizontal
+ * scroll. That one route gets the full window instead.
+ */
+function MainContainer({ children }: { children: React.ReactNode }) {
+  const { pathname } = useLocation();
+  const wide = pathname.startsWith("/options");
+  return (
+    <main className={`flex-1 mx-auto w-full px-4 py-8 ${wide ? "max-w-[1800px]" : "max-w-7xl"}`}>
+      {children}
+    </main>
+  );
+}
+
 function AppRoutes() {
   return (
     <Routes>
@@ -29,7 +44,7 @@ function AppRoutes() {
         element={
           <div className="min-h-screen flex flex-col">
             <Navbar />
-            <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-8">
+            <MainContainer>
               <Routes>
                 <Route path="/" element={<Home />} />
                 <Route path="/stock/:ticker" element={<StockDetail />} />
@@ -52,7 +67,7 @@ function AppRoutes() {
                   }
                 />
               </Routes>
-            </main>
+            </MainContainer>
           </div>
         }
       />

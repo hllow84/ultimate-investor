@@ -154,16 +154,19 @@ const EVENT_STYLES: Record<string, { bg: string; color: string }> = {
 type SortKey = "roi_pct" | "ticker" | "dte" | "exp_move_pct" | "iv_rank";
 type FilterType = "all" | "put" | "call";
 
+/**
+ * Kept to 12 data columns so the table fits a normal window without horizontal
+ * scrolling. Strategy rides under the ticker, spot under the strikes, and max
+ * risk under the credit — each pair reads as one fact anyway, and stacking them
+ * uses vertical space the rows already occupied.
+ */
 const COLUMNS: [SortKey | null, string][] = [
   ["ticker", "Ticker"],
-  [null, "Strategy"],
-  [null, "Price"],
-  [null, "Strike / Δ"],
-  [null, "Net Credit"],
-  [null, "Max Risk"],
+  [null, "Strikes / Δ"],
+  [null, "Credit / Risk"],
   ["roi_pct", "ROI %"],
   [null, "Buffer %"],
-  ["exp_move_pct", "±1σ (IV vs HV30)"],
+  ["exp_move_pct", "±1σ"],
   ["iv_rank", "IV Rank"],
   [null, "Manage"],
   ["dte", "DTE"],
@@ -454,67 +457,59 @@ function SpreadRows({ s, expanded, onToggle }: {
             : <ChevronRight size={14} style={{ color: "var(--muted)" }} />}
         </td>
 
-        {/* Ticker */}
+        {/* Ticker · strategy · risk flags */}
         <td className="py-3 px-2" onClick={e => e.stopPropagation()}>
-          {s.ticker.startsWith("^") ? (
-            <span className="font-semibold text-sm" style={{ color: "var(--accent)" }}>{s.ticker}</span>
-          ) : (
-            <Link to={`/stock/${s.ticker}`} className="font-semibold text-sm hover:underline" style={{ color: "var(--accent)" }}>
-              {s.ticker}
-            </Link>
+          <span className="inline-flex items-center">
+            {s.ticker.startsWith("^") ? (
+              <span className="font-semibold text-sm" style={{ color: "var(--accent)" }}>{s.ticker}</span>
+            ) : (
+              <Link to={`/stock/${s.ticker}`} className="font-semibold text-sm hover:underline" style={{ color: "var(--accent)" }}>
+                {s.ticker}
+              </Link>
+            )}
+            <QualityBadge s={s} />
+          </span>
+          <p className="mt-0.5">
+            <span className="text-xs font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap"
+              style={{ backgroundColor: stratColor + "22", color: stratColor }}>
+              {isPut ? "↑ Bull Put" : "↓ Bear Call"}
+            </span>
+          </p>
+          {s.widths.some(w => w.suspect) && (
+            <p className="text-xs font-semibold mt-0.5 px-1 py-0.5 rounded whitespace-nowrap inline-block"
+              style={{ backgroundColor: "var(--red)22", color: "var(--red)" }}
+              title={s.widths.find(w => w.suspect)?.suspect_reason ?? ""}>
+              verify vs broker
+            </p>
           )}
-          <QualityBadge s={s} />
           {s.exdiv_risk && (
-            <p className="text-xs font-semibold mt-0.5 whitespace-nowrap" style={{ color: "#22c55e" }}
+            <p className="text-xs font-semibold whitespace-nowrap" style={{ color: "#22c55e" }}
               title={s.exdiv_risk.note}>
               ⚑ ex-div {s.exdiv_risk.date.slice(5).replace("-", "/")}
             </p>
           )}
         </td>
 
-        {/* Strategy */}
-        <td className="py-3 px-2">
-          <span className="text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
-            style={{ backgroundColor: stratColor + "22", color: stratColor }}>
-            {isPut ? "↑ Bull Put" : "↓ Bear Call"}
-          </span>
-          {s.widths.some(w => w.suspect) && (
-            <p className="text-xs font-semibold mt-1 px-1.5 py-0.5 rounded whitespace-nowrap inline-block"
-              style={{ backgroundColor: "var(--red)22", color: "var(--red)" }}
-              title={s.widths.find(w => w.suspect)?.suspect_reason ?? ""}>
-              verify vs broker
-            </p>
-          )}
-        </td>
-
-        {/* Price */}
-        <td className="py-3 px-2 text-sm text-right font-medium" style={{ color: "var(--text)" }}>
-          ${s.stock_price.toLocaleString()}
-        </td>
-
-        {/* Short Strike / Δ */}
-        <td className="py-3 px-2 text-sm text-right">
+        {/* Strikes · delta · spot */}
+        <td className="py-3 px-2 text-sm text-right whitespace-nowrap">
           <span style={{ color: "var(--text)" }}>{s.short_strike}</span>
           <span className="mx-1" style={{ color: "var(--muted)" }}>/</span>
           <span style={{ color: "var(--muted)" }}>{defaultW?.long_strike ?? "—"}</span>
           <p className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>Δ {s.short_delta}</p>
+          <p className="text-xs" style={{ color: "var(--muted)" }}>spot ${s.stock_price.toLocaleString()}</p>
         </td>
 
-        {/* Net Credit (narrowest cleanly-quoted width) */}
-        <td className="py-3 px-2 text-sm text-right">
+        {/* Credit · max risk · width (narrowest cleanly-quoted width) */}
+        <td className="py-3 px-2 text-sm text-right whitespace-nowrap">
           {priced && defaultW ? (
             <>
               <span style={{ color: "var(--green)" }}>${defaultW.net_credit!.toFixed(2)}</span>
-              <p className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>${defaultW.width} wide</p>
+              <p className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>
+                risk <span style={{ color: "var(--red)" }}>${defaultW.max_risk!.toFixed(2)}</span>
+              </p>
+              <p className="text-xs" style={{ color: "var(--muted)" }}>${defaultW.width} wide</p>
             </>
           ) : <QuoteUnavailable issue={defaultW?.quote_issue} />}
-        </td>
-
-        {/* Max Risk */}
-        <td className="py-3 px-2 text-sm text-right">
-          {priced && defaultW
-            ? <span style={{ color: "var(--red)" }}>${defaultW.max_risk!.toFixed(2)}</span>
-            : dash}
         </td>
 
         {/* ROI % */}
@@ -541,22 +536,17 @@ function SpreadRows({ s, expanded, onToggle }: {
           ) : dash}
         </td>
 
-        {/* ±1σ standard deviation over DTE */}
-        <td className="py-3 px-2 text-sm text-right">
+        {/* ±1σ over the trade's DTE — IV-implied on top, HV30-realised below */}
+        <td className="py-3 px-2 text-sm text-right whitespace-nowrap"
+          title={`IV-implied 1σ ±${s.exp_move_pct}% (IV ${s.iv_pct}% annualised)`
+            + (s.hv30_move_pct > 0 ? ` · realised 1σ ±${s.hv30_move_pct}% (HV30 ${s.hv30_pct}%)` : "")}>
           {s.exp_move_pct > 0 ? (
             <>
-              {/* IV-implied 1σ */}
               <span style={{ color: "var(--text)" }}>±{s.exp_move_pct.toFixed(1)}%</span>
-              <span className="ml-1 text-xs" style={{ color: "var(--muted)" }}>
-                (IV {s.iv_pct}%)
-              </span>
-              {/* HV30-realized 1σ */}
+              <p className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>IV {s.iv_pct}%</p>
               {s.hv30_move_pct > 0 && (
-                <p className="text-xs mt-0.5">
-                  <span style={{ color: "var(--muted)" }}>±{s.hv30_move_pct.toFixed(1)}%</span>
-                  <span className="ml-1" style={{ color: "var(--muted)" }}>
-                    (HV30 {s.hv30_pct}%)
-                  </span>
+                <p className="text-xs" style={{ color: "var(--muted)" }}>
+                  HV30 {s.hv30_pct}%
                   {ivVsHv && (
                     <span className="ml-1 font-semibold" style={{ color: ivVsHv.color }}>{ivVsHv.label}</span>
                   )}
@@ -650,7 +640,7 @@ function SpreadRows({ s, expanded, onToggle }: {
             <table className="w-full text-xs">
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                  {["Width", "Long Strike", "Long Ask", "Net Credit (×100/contract)", "Max Risk", "ROI %",
+                  {["Width", "Long Strike", "Long Ask", "Net Credit", "Max Risk", "ROI %",
                     "Credit/Width", "Buffer %", "Breakeven", `Close @ ${s.manage_profit_pct}%`, ""].map((h, i) => (
                     <th key={i} className={`py-1.5 px-2 font-semibold uppercase tracking-wider ${i > 0 ? "text-right" : "text-left"}`}
                       style={{ color: "var(--muted)" }}>
@@ -770,13 +760,15 @@ function SpreadTable({ rows, keyPrefix, expandedSet, onToggle, sortKey, sortAsc,
   const arrow = (key: SortKey) => (sortKey === key ? (sortAsc ? " ↑" : " ↓") : "");
 
   return (
-    <table className="w-full text-sm min-w-[1500px]">
+    <table className="w-full text-sm min-w-[1180px]">
       <thead>
         <tr style={{ borderBottom: "1px solid var(--border)" }}>
           <th className="py-3 pl-3 pr-1 w-6" />
           {COLUMNS.map(([key, label], i) => (
             <th key={i}
-              className={`py-3 px-2 text-xs font-semibold uppercase tracking-wider ${i > 1 ? "text-right" : "text-left"}`}
+              // `uppercase` would render the sigma as a capital Σ, which is a
+              // different symbol — that one header keeps its own casing.
+              className={`py-3 px-2 text-xs font-semibold tracking-wider ${label.includes("σ") ? "" : "uppercase"} ${i > 0 ? "text-right" : "text-left"}`}
               style={key && onSort ? thStyle(key) : { color: "var(--muted)", whiteSpace: "nowrap" }}
               onClick={key && onSort ? () => onSort(key) : undefined}>
               {label}{key && onSort ? arrow(key) : ""}
