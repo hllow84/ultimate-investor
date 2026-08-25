@@ -172,3 +172,69 @@ export interface Token {
   access_token: string;
   user: UserResponse;
 }
+
+// ─── Credit spread scanner ────────────────────────────────────────────────────
+
+export interface SpreadPositionCreate {
+  ticker: string;
+  opt_type: "put" | "call";
+  short_strike: number;
+  long_strike: number;
+  expiry: string;
+  net_credit: number;
+  contracts?: number;
+  short_iv_pct?: number | null;
+  long_iv_pct?: number | null;
+  notes?: string | null;
+}
+
+export interface PositionRow {
+  id: number;
+  ticker: string;
+  opt_type: "put" | "call";
+  strategy: string;
+  short_strike: number;
+  long_strike: number;
+  width: number;
+  expiry: string;
+  dte: number;
+  contracts: number;
+  net_credit: number;
+  credit_total: number;
+  max_risk_total: number;
+  manage_price: number;
+  days_to_manage_dte: number;
+  spot: number;
+  cushion_pct: number;
+  short_delta: number;
+  long_delta: number;
+  position_delta: number;
+  dollar_delta: number;
+  beta: number;
+  beta_estimated: boolean;
+  beta_dollar_delta: number;
+  spy_equiv_shares: number;
+  opened_at: string | null;
+  closed_at: string | null;
+  notes: string | null;
+}
+
+export interface PortfolioSummary {
+  positions: number;
+  benchmark: string;
+  benchmark_price: number;
+  beta_dollar_delta: number;
+  raw_dollar_delta: number;
+  spy_equiv_shares: number;
+  total_max_risk: number;
+  total_credit: number;
+  lean: string;
+  lean_color: "green" | "red" | "yellow";
+  pnl_per_1pct_spy: number;
+  any_beta_estimated: boolean;
+}
+
+export interface PortfolioResponse {
+  positions: PositionRow[];
+  summary: PortfolioSummary;
+}

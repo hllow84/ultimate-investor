@@ -180,3 +180,16 @@ class UserResponse(BaseModel):
 class Token(BaseModel):
     access_token: str
     user: UserResponse
+
+
+class SpreadPositionCreate(BaseModel):
+    ticker: str
+    opt_type: str                      # "put" (bull put) | "call" (bear call)
+    short_strike: float
+    long_strike: float
+    expiry: str                        # ISO yyyy-mm-dd
+    net_credit: float
+    contracts: int = 1
+    short_iv_pct: Optional[float] = None
+    long_iv_pct: Optional[float] = None
+    notes: Optional[str] = None

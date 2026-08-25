@@ -11,6 +11,8 @@ import type {
   WatchlistItem,
   Alert,
   Token,
+  PortfolioResponse,
+  SpreadPositionCreate,
 } from "@/types";
 
 const BASE = "/api";
@@ -82,5 +84,12 @@ export const api = {
     create: (alert: Alert) => post<Alert>(`/alerts/`, alert, true),
     toggle: (id: number) => patch<Alert>(`/alerts/${id}/toggle`),
     delete: (id: number) => del(`/alerts/${id}`),
+  },
+  options: {
+    positions: () => get<PortfolioResponse>(`/options/positions`),
+    savePosition: (p: SpreadPositionCreate) =>
+      post<{ id: number; ticker: string; expiry: string }>(`/options/positions`, p, true),
+    closePosition: (id: number) => patch<{ id: number }>(`/options/positions/${id}/close`),
+    deletePosition: (id: number) => del(`/options/positions/${id}`),
   },
 };

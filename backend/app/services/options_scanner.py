@@ -2,7 +2,13 @@
 Credit spread scanner — daily-refreshed bull put spreads + bear call spreads.
 
 Uses Black-Scholes delta (pure Python, no scipy) to find short legs near delta 10,
-long legs one strike further OTM, 30-45 DTE, for a curated list of liquid tickers.
+long legs at a range of widths, 30-45 DTE, for a curated list of liquid tickers.
+
+Quote integrity is the priority here: a stale or one-sided quote on either leg
+silently manufactures fake edge — a missing long ask makes the long look free, so
+the net credit becomes the entire short bid and ROI explodes. Every leg is run
+through _quote(), and a row whose quote is unusable reports "quote unavailable"
+rather than a number that looks tradable.
 """
 import logging
 import math
@@ -11,6 +17,8 @@ from typing import Optional
 from zoneinfo import ZoneInfo
 
 import yfinance as yf
+
+from app.services import iv_history
 
 log = logging.getLogger(__name__)
 
@@ -30,6 +38,17 @@ DELTA_RANGE_LOW = 0.05   # don't go below this (too OTM, thin premium)
 DELTA_RANGE_HIGH = 0.25  # don't go above this (too close to ATM, too much risk)
 MIN_BID = 0.05           # minimum bid for the short leg to consider it liquid
 MIN_ROI = 2.0            # minimum ROI% — lowered from 5 to account for conservative bid/ask pricing
+
+# --- Quote integrity / data quality -----------------------------------------
+OPENING_RANGE_MINUTES = 45   # first N minutes of the session: quotes least reliable
+MIN_OPEN_INTEREST = 10       # below this the chain row is barely a market
+WIDE_QUOTE_RATIO = 0.60      # (ask-bid)/mid above this is a warning, not a block
+SUSPECT_CREDIT_WIDTH_PCT = 40.0   # credit worth >40% of width...
+SUSPECT_DELTA_MAX = 0.15          # ...at a delta this low is not a real market
+
+# --- Trade management --------------------------------------------------------
+MANAGE_PROFIT_PCT = 0.50     # close at 50% of credit received
+MANAGE_DTE = 21              # and/or at 21 DTE, whichever comes first
 
 
 # ---------------------------------------------------------------------------
@@ -73,14 +92,40 @@ def _num(value, default: float = 0.0) -> float:
     return f if math.isfinite(f) else default
 
 
-def _bid_price(row) -> float:
-    """Price you receive when selling. Returns 0.0 if no live bid — caller checks MIN_BID."""
-    return _num(row.get("bid", 0))
+def _quote(row) -> dict:
+    """
+    Validate one option chain row's quote.
 
+    Hard failures (ok=False — nothing is priced off this leg):
+      - bid or ask missing / NaN / zero  → no live two-sided market
+      - bid > ask                        → crossed; the feed is stale or broken
 
-def _ask_price(row) -> float:
-    """Price you pay when buying. Returns 0.0 if no live ask."""
-    return _num(row.get("ask", 0))
+    Soft warning (ok=True, wide=True): the bid/ask spread is a large fraction of
+    the mid. Common and legitimate on deep-OTM long legs, so it annotates rather
+    than blocks.
+    """
+    bid = _num(row.get("bid"))
+    ask = _num(row.get("ask"))
+    oi = int(_num(row.get("openInterest")))
+    vol = int(_num(row.get("volume")))
+
+    if bid <= 0 or ask <= 0:
+        return {"ok": False, "issue": "no two-sided quote", "bid": bid, "ask": ask,
+                "mid": 0.0, "wide": False, "oi": oi, "volume": vol}
+    if bid > ask:
+        return {"ok": False, "issue": "crossed quote (bid > ask)", "bid": bid, "ask": ask,
+                "mid": 0.0, "wide": False, "oi": oi, "volume": vol}
+
+    mid = (bid + ask) / 2.0
+    if mid <= 0:
+        return {"ok": False, "issue": "no valid mid", "bid": bid, "ask": ask,
+                "mid": 0.0, "wide": False, "oi": oi, "volume": vol}
+
+    return {
+        "ok": True, "issue": None, "bid": round(bid, 2), "ask": round(ask, 2),
+        "mid": round(mid, 3), "wide": (ask - bid) / mid > WIDE_QUOTE_RATIO,
+        "oi": oi, "volume": vol,
+    }
 
 
 def _json_safe(obj):
@@ -101,16 +146,35 @@ def _json_safe(obj):
     return obj
 
 
+def _now_et() -> datetime:
+    return datetime.now(ZoneInfo("America/New_York"))
+
+
 def _is_market_open() -> bool:
     """True if NYSE regular session is currently active."""
     try:
-        now = datetime.now(ZoneInfo("America/New_York"))
+        now = _now_et()
         if now.weekday() >= 5:
             return False
         t = now.time()
         return dtime(9, 30) <= t <= dtime(16, 0)
     except Exception:
         return False
+
+
+def _session_minutes() -> Optional[int]:
+    """Minutes elapsed since the 09:30 ET open, or None outside the session."""
+    try:
+        now = _now_et()
+        if now.weekday() >= 5:
+            return None
+        open_dt = now.replace(hour=9, minute=30, second=0, microsecond=0)
+        close_dt = now.replace(hour=16, minute=0, second=0, microsecond=0)
+        if not (open_dt <= now <= close_dt):
+            return None
+        return int((now - open_dt).total_seconds() // 60)
+    except Exception:
+        return None
 
 
 def _find_target_expiry(options_dates: list[str]) -> Optional[str]:
@@ -141,9 +205,17 @@ TARGET_WIDTHS = [5, 10, 25, 50, 100]  # spread widths to show in the expander
 
 def _width_variant(
     df, S: float, short_strike: float, short_premium: float,
-    opt_type: str, target_w: float
+    short_delta_abs: float, opt_type: str, target_w: float
 ) -> Optional[dict]:
-    """Compute one spread-width variant. Returns None if not viable."""
+    """
+    Compute one spread-width variant.
+
+    Every width re-reads the chain for its own long strike and that strike's own
+    ask, so net_credit genuinely differs per width — it is never the narrow-width
+    credit re-labelled. Returns None only when no long strike exists near the
+    target width; a strike that exists but has an unusable quote comes back with
+    quote_ok=False and null prices so the UI can say "quote unavailable".
+    """
     if opt_type == "put":
         target_long = short_strike - target_w
         long_cands = df[df["strike"] < short_strike].copy()
@@ -161,38 +233,88 @@ def _width_variant(
         return None
     actual_width = round(abs(short_strike - long_strike), 2)
 
-    # Reject if strike didn't get close to the target width
-    if actual_width < target_w * 0.4:
+    # Reject if the strike didn't get close to the target width
+    if actual_width < target_w * 0.4 or actual_width <= 0:
         return None
 
-    long_premium = _ask_price(long_row)   # you buy the long — pay ask
+    lq = _quote(long_row)
+    base = {
+        "width": actual_width,
+        "long_strike": long_strike,
+        "long_bid": lq["bid"],
+        "long_ask": lq["ask"],
+        "long_oi": lq["oi"],
+        "long_volume": lq["volume"],
+        "long_iv_pct": round(_num(long_row.get("impliedVolatility")) * 100, 1),
+        "quote_ok": lq["ok"],
+        "quote_issue": lq["issue"],
+        "wide_quote": lq["wide"],
+        "net_credit": None,
+        "max_risk": None,
+        "roi_pct": None,
+        "breakeven": None,
+        "buffer_pct": None,
+        "credit_width_pct": None,
+        "manage_price": None,
+        "manage_profit": None,
+        "suspect": False,
+        "suspect_reason": None,
+    }
+
+    # Unusable long quote — surface the strike, refuse to price it.
+    if not lq["ok"]:
+        return base
+
+    long_premium = lq["ask"]   # you buy the long — pay ask
     net_credit = short_premium - long_premium
-    if net_credit <= 0 or actual_width <= 0:
-        return None
+    if net_credit <= 0:
+        return {**base, "quote_ok": False, "quote_issue": "no net credit at this width"}
 
     max_risk = actual_width - net_credit
     if max_risk <= 0:
-        return None
+        # A credit >= the width is arbitrage-impossible: bad data, not free money.
+        return {**base, "quote_ok": False, "quote_issue": "credit exceeds width (bad quote)"}
 
     roi = (net_credit / max_risk) * 100.0
     be = short_strike - net_credit if opt_type == "put" else short_strike + net_credit
     buffer_pct = round(abs(be - S) / S * 100, 1) if S > 0 else 0.0
+    credit_width_pct = round(net_credit / actual_width * 100, 1)
+
+    # Sanity ceiling: at delta <= 0.15 a credit worth >40% of the width is not a
+    # market that exists. Flag it rather than presenting it as an opportunity.
+    suspect = credit_width_pct > SUSPECT_CREDIT_WIDTH_PCT and short_delta_abs <= SUSPECT_DELTA_MAX
+    suspect_reason = (
+        f"Credit is {credit_width_pct}% of the ${actual_width:g} width at Δ{short_delta_abs:.2f} — "
+        "implausible for a short leg this far out of the money. Verify against your broker."
+        if suspect else None
+    )
 
     return {
-        "width": actual_width,
-        "long_strike": long_strike,
+        **base,
         "net_credit": round(net_credit, 2),
         "max_risk": round(max_risk, 2),
         "roi_pct": round(roi, 1),
         "breakeven": round(be, 2),
         "buffer_pct": buffer_pct,
+        "credit_width_pct": credit_width_pct,
+        # Manage at 50% of credit: pay this debit to close, bank the difference.
+        "manage_price": round(net_credit * (1 - MANAGE_PROFIT_PCT), 2),
+        "manage_profit": round(net_credit * MANAGE_PROFIT_PCT, 2),
+        "suspect": suspect,
+        "suspect_reason": suspect_reason,
     }
 
 
-def _build_spreads(sym: str, S: float, expiry: str, dte: int, chain, hv30_pct: float = 0.0) -> list[dict]:
+def _build_spreads(
+    sym: str, S: float, expiry: str, expiry_date: date, dte: int, chain,
+    hv30_pct: float = 0.0, iv_stats: Optional[dict] = None,
+    next_earnings: Optional[dict] = None, next_exdiv: Optional[dict] = None,
+) -> list[dict]:
     """Return one spread record per direction (put/call) with all width variants."""
     T = dte / 365.0
     results = []
+    session_min = _session_minutes()
+    opening_range = session_min is not None and session_min < OPENING_RANGE_MINUTES
 
     for opt_type, df in [("put", chain.puts), ("call", chain.calls)]:
         if df is None or df.empty:
@@ -223,15 +345,21 @@ def _build_spreads(sym: str, S: float, expiry: str, dte: int, chain, hv30_pct: f
         cands["_diff"] = (cands["_delta"] - target_signed).abs()
         short_row = cands.loc[cands["_diff"].idxmin()]
         short_strike = _num(short_row["strike"])
-        short_premium = _bid_price(short_row)  # you sell the short — receive bid
-        short_bid = short_premium
         short_delta_abs = round(abs(_num(short_row["_delta"])), 3)
-
-        # _num() already collapses NaN to 0.0, so these guards now bite
-        if short_strike <= 0 or short_bid < MIN_BID or short_premium <= 0:
+        if short_strike <= 0:
             continue
 
-        # IV / move metrics (same for all widths — depends on short leg only)
+        # The short leg is the anchor: without a real two-sided quote there is
+        # nothing to price at any width, so the whole direction is dropped.
+        sq = _quote(short_row)
+        if not sq["ok"]:
+            log.debug("%s %s Δ%.2f short leg unusable: %s", sym, opt_type, short_delta_abs, sq["issue"])
+            continue
+        short_premium = sq["bid"]   # you sell the short — receive bid
+        if short_premium < MIN_BID:
+            continue
+
+        # IV / move metrics (same for all widths — depends on the short leg only)
         iv_decimal = _num(short_row.get("impliedVolatility", 0))
         iv_pct = round(iv_decimal * 100, 1)
         exp_move_pct = round(iv_decimal * math.sqrt(T) * 100, 1) if iv_decimal > 0 else 0.0
@@ -247,7 +375,7 @@ def _build_spreads(sym: str, S: float, expiry: str, dte: int, chain, hv30_pct: f
         widths_list: list[dict] = []
         seen: set[int] = set()
         for tw in TARGET_WIDTHS:
-            v = _width_variant(df, S, short_strike, short_premium, opt_type, tw)
+            v = _width_variant(df, S, short_strike, short_premium, short_delta_abs, opt_type, tw)
             if v is None:
                 continue
             key = round(v["width"])
@@ -261,9 +389,86 @@ def _build_spreads(sym: str, S: float, expiry: str, dte: int, chain, hv30_pct: f
 
         widths_list.sort(key=lambda x: x["width"])
 
-        # Require the narrowest width to meet the minimum ROI threshold
-        if widths_list[0]["roi_pct"] < MIN_ROI:
+        priced = [w for w in widths_list if w["quote_ok"]]
+        if not priced:
+            # Every width had a broken long quote — nothing tradable to show.
+            log.debug("%s %s: no width had a usable long quote", sym, opt_type)
             continue
+
+        # Gate on the narrowest *clean* width. Suspect rows are excluded from the
+        # test so a bad quote can't qualify a spread its real widths would not.
+        clean = [w for w in priced if not w["suspect"]]
+        gate = clean[0] if clean else priced[0]
+        if _num(gate["roi_pct"]) < MIN_ROI:
+            continue
+
+        # ---- data-quality assessment --------------------------------------
+        flags: list[str] = []
+        if opening_range:
+            flags.append(f"opening range ({session_min}m after open)")
+        if sq["oi"] < MIN_OPEN_INTEREST:
+            flags.append(f"thin open interest ({sq['oi']})")
+        if opening_range and sq["volume"] <= 0:
+            flags.append("no volume yet today")
+        if sq["wide"]:
+            flags.append("wide bid/ask on short leg")
+        if any(w["suspect"] for w in priced):
+            flags.append("credit/width ratio implausible")
+
+        # A dead quote on the $100-wide leg says nothing about the $5 default
+        # row, so unpriced widths are reported separately rather than as a
+        # quality flag — otherwise the badge and the hide-flagged filter fire on
+        # rows whose tradable width is perfectly clean.
+        unpriced_widths = [w["width"] for w in widths_list if not w["quote_ok"]]
+
+        quality = {
+            "market_open": session_min is not None,
+            "minutes_since_open": session_min,
+            "opening_range": opening_range,
+            "short_oi": sq["oi"],
+            "short_volume": sq["volume"],
+            "short_bid": sq["bid"],
+            "short_ask": sq["ask"],
+            "low_liquidity": sq["oi"] < MIN_OPEN_INTEREST,
+            "unpriced_widths": unpriced_widths,
+            "reliable": not flags,
+            "flags": flags,
+        }
+
+        # ---- ex-dividend early-assignment risk (bear calls only) ----------
+        exdiv_risk = None
+        if opt_type == "call" and next_exdiv:
+            xd = _to_date(next_exdiv.get("date"))
+            if xd and date.today() <= xd <= expiry_date:
+                # A short call risks early assignment when it is ITM (or close)
+                # going into the ex-div date: the holder exercises to capture the
+                # dividend and you end up short the stock owing that dividend.
+                itm = S > short_strike
+                near = short_strike <= S * 1.02
+                if itm or near:
+                    exdiv_risk = {
+                        "date": xd.isoformat(),
+                        "days_away": (xd - date.today()).days,
+                        "amount": next_exdiv.get("amount"),
+                        "moneyness": "ITM" if itm else "near-the-money",
+                        "note": (
+                            f"Short {short_strike:g} call is "
+                            f"{'in the money' if itm else 'within 2% of spot'} and the "
+                            f"{xd.isoformat()} ex-dividend date falls before {expiry} — "
+                            "early assignment risk; you would owe the dividend."
+                        ),
+                    }
+
+        # ---- earnings before expiry ---------------------------------------
+        earnings = None
+        if next_earnings:
+            ed = _to_date(next_earnings.get("date"))
+            if ed:
+                earnings = {
+                    "date": ed.isoformat(),
+                    "days_away": (ed - date.today()).days,
+                    "before_expiry": ed <= expiry_date,
+                }
 
         results.append({
             "ticker": sym,
@@ -279,9 +484,25 @@ def _build_spreads(sym: str, S: float, expiry: str, dte: int, chain, hv30_pct: f
             "exp_move_dollar": exp_move_dollar,
             "hv30_move_pct": hv30_move_pct,
             "hv30_move_dollar": hv30_move_dollar,
-            "short_bid": round(short_bid, 2),
-            "roi_pct": widths_list[0]["roi_pct"],  # narrowest width ROI — used for sorting
+            "short_bid": round(short_premium, 2),
+            "short_ask": sq["ask"],
+            "roi_pct": _num(gate["roi_pct"]),  # narrowest clean width — used for sorting
             "widths": widths_list,
+            "quality": quality,
+            "iv_rank": (iv_stats or {}).get("iv_rank"),
+            "iv_percentile": (iv_stats or {}).get("iv_percentile"),
+            "iv_atm_pct": (iv_stats or {}).get("iv_atm_pct"),
+            "iv_rank_source": (iv_stats or {}).get("source", "unavailable"),
+            "iv_52w_low": (iv_stats or {}).get("iv_low"),
+            "iv_52w_high": (iv_stats or {}).get("iv_high"),
+            "next_earnings": earnings,
+            "exdiv_risk": exdiv_risk,
+            # Trade management. Per-width close prices live on each width variant
+            # as manage_price / manage_profit; the 21-DTE checkpoint is per spread.
+            "manage_dte": MANAGE_DTE,
+            "days_to_manage_dte": dte - MANAGE_DTE,
+            "manage_date": (expiry_date - timedelta(days=MANAGE_DTE)).isoformat(),
+            "manage_profit_pct": int(MANAGE_PROFIT_PCT * 100),
         })
 
     return results
@@ -350,40 +571,69 @@ def _to_date(val) -> Optional[date]:
     return None
 
 
-def _stock_events(ticker_obj, window_days: int) -> list[dict]:
-    """Earnings and ex-dividend events for one ticker within `window_days`."""
-    today = date.today()
-    cutoff = today + timedelta(days=window_days)
-    events: list[dict] = []
+def _calendar_dict(ticker_obj) -> dict:
+    """yfinance .calendar as a plain dict — it returns a DataFrame (newer) or dict (older)."""
     try:
         cal = ticker_obj.calendar
         if cal is None:
-            return events
-
-        # yfinance returns a DataFrame (newer) or dict (older)
-        if hasattr(cal, "to_dict"):
-            # DataFrame — transpose so keys are column names
-            cal = cal.iloc[0].to_dict() if not cal.empty else {}
-
-        # Earnings date
-        raw_ed = cal.get("Earnings Date")
-        if raw_ed is not None:
-            # Can be a list [low, high] or a scalar
-            ed = _to_date(raw_ed[0] if isinstance(raw_ed, (list, tuple)) else raw_ed)
-            if ed and today <= ed <= cutoff:
-                events.append({"type": "earnings", "date": ed.isoformat(),
-                               "label": "Earnings", "days_away": (ed - today).days})
-
-        # Ex-dividend date
-        raw_xd = cal.get("Ex-Dividend Date")
-        if raw_xd is not None:
-            xd = _to_date(raw_xd)
-            if xd and today <= xd <= cutoff:
-                events.append({"type": "exdiv", "date": xd.isoformat(),
-                               "label": "Ex-Div", "days_away": (xd - today).days})
-
+            return {}
+        if hasattr(cal, "empty"):      # DataFrame
+            return cal.iloc[0].to_dict() if not cal.empty else {}
+        return dict(cal)
     except Exception as e:
-        log.debug("Event fetch failed: %s", e)
+        log.debug("calendar fetch failed: %s", e)
+        return {}
+
+
+def _next_earnings(cal: dict) -> Optional[dict]:
+    """
+    Next earnings date regardless of any window — None for indices/ETFs.
+
+    Separate from _stock_events(): the Events column only shows what lands inside
+    the spread's lifetime, but the earnings *column* needs the date even when it
+    falls after expiry, so "reports before expiration" can be answered either way.
+    """
+    raw = cal.get("Earnings Date")
+    if raw is None:
+        return None
+    ed = _to_date(raw[0] if isinstance(raw, (list, tuple)) and len(raw) else raw)
+    if not ed or ed < date.today():
+        return None
+    return {"date": ed.isoformat(), "days_away": (ed - date.today()).days}
+
+
+def _next_exdiv(cal: dict) -> Optional[dict]:
+    """Next ex-dividend date + amount regardless of any window."""
+    xd = _to_date(cal.get("Ex-Dividend Date"))
+    if not xd or xd < date.today():
+        return None
+    amount = _num(cal.get("Dividend Rate") or cal.get("dividendRate"))
+    return {
+        "date": xd.isoformat(),
+        "days_away": (xd - date.today()).days,
+        "amount": round(amount, 2) if amount > 0 else None,
+    }
+
+
+def _stock_events(cal: dict, window_days: int) -> list[dict]:
+    """Earnings and ex-dividend events within `window_days` (for the Events column)."""
+    cutoff = date.today() + timedelta(days=window_days)
+    events: list[dict] = []
+
+    ne = _next_earnings(cal)
+    if ne:
+        ed = _to_date(ne["date"])
+        if ed and ed <= cutoff:
+            events.append({"type": "earnings", "date": ne["date"],
+                           "label": "Earnings", "days_away": ne["days_away"]})
+
+    xd = _next_exdiv(cal)
+    if xd:
+        d = _to_date(xd["date"])
+        if d and d <= cutoff:
+            events.append({"type": "exdiv", "date": xd["date"],
+                           "label": "Ex-Div", "days_away": xd["days_away"]})
+
     return events
 
 
@@ -429,18 +679,32 @@ def _tech_signal(rsi: float, sma50_pct: Optional[float], sma200_pct: Optional[fl
     return "neutral"
 
 
-def _compute_history_metrics(ticker_obj) -> tuple[float, dict]:
+def _rolling_hv_series(closes: list[float], window: int = 30) -> list[float]:
+    """Annualised realised vol over a rolling `window` of trading days, in %."""
+    if len(closes) < window + 2:
+        return []
+    rets = [math.log(closes[i] / closes[i - 1]) for i in range(1, len(closes))
+            if closes[i - 1] > 0 and closes[i] > 0]
+    out: list[float] = []
+    for i in range(window, len(rets) + 1):
+        w = rets[i - window:i]
+        m = sum(w) / len(w)
+        var = sum((x - m) ** 2 for x in w) / (len(w) - 1)
+        out.append(math.sqrt(var) * math.sqrt(252) * 100)
+    return out
+
+
+def _compute_history_metrics(ticker_obj) -> tuple[float, dict, list[float]]:
     """
-    Single 1-year history fetch → (hv30_pct, tech_summary).
+    Single 1-year history fetch → (hv30_pct, tech_summary, rolling_hv_series).
     tech_summary keys: signal, rsi, sma50_pct, sma200_pct, w52_high_pct
-    Returns (0.0, {}) on failure.
+    Returns (0.0, {}, []) on failure.
     """
-    empty_tech: dict = {}
     try:
         hist = ticker_obj.history(period="1y")
         closes = hist["Close"].dropna().tolist()
         if len(closes) < 10:
-            return 0.0, empty_tech
+            return 0.0, {}, []
 
         # HV30 — last 30 trading days (~45 calendar)
         hv_closes = closes[-45:] if len(closes) >= 45 else closes
@@ -469,11 +733,34 @@ def _compute_history_metrics(ticker_obj) -> tuple[float, dict]:
             "sma200_pct": sma200_pct,
             "w52_high_pct": w52_high_pct,
         }
-        return hv30, tech
+        return hv30, tech, _rolling_hv_series(closes)
 
     except Exception as e:
         log.debug("history metrics failed: %s", e)
-        return 0.0, empty_tech
+        return 0.0, {}, []
+
+
+def _atm_iv_pct(chain, S: float) -> float:
+    """
+    At-the-money implied vol, averaged across the nearest call and put.
+
+    ATM IV — not the delta-10 leg's IV — is what IV Rank is conventionally quoted
+    against; skew makes a wing's IV a moving target relative to the surface.
+    """
+    vals: list[float] = []
+    for df in (chain.calls, chain.puts):
+        if df is None or df.empty:
+            continue
+        try:
+            d = df.copy()
+            d["_d"] = (d["strike"].astype(float) - S).abs()
+            row = d.loc[d["_d"].idxmin()]
+            iv = _num(row.get("impliedVolatility"))
+            if iv > 0:
+                vals.append(iv * 100)
+        except Exception:
+            continue
+    return round(sum(vals) / len(vals), 1) if vals else 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -519,6 +806,56 @@ def vix_label(vix: float) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Per-ticker scan (shared by the curated sweep and the custom-ticker endpoint)
+# ---------------------------------------------------------------------------
+
+def _scan_ticker(sym: str, macro: list[dict]) -> list[dict]:
+    """Scan one ticker. Raises ValueError on hard failures so callers can report them."""
+    ticker = yf.Ticker(sym)
+    S = _num(ticker.fast_info.last_price)
+    if S <= 0:
+        raise ValueError(f"No price data for {sym}")
+
+    options_dates = list(ticker.options)
+    if not options_dates:
+        raise ValueError(f"{sym} has no options chain")
+
+    expiry = _find_target_expiry(options_dates)
+    if not expiry:
+        raise ValueError(f"{sym} has no expiry in the 30–45 DTE window")
+
+    expiry_date = datetime.strptime(expiry, "%Y-%m-%d").date()
+    dte = (expiry_date - date.today()).days
+    chain = ticker.option_chain(expiry)
+
+    hv30, tech, hv_series = _compute_history_metrics(ticker)
+
+    # IV Rank: record today's ATM IV, then rank the current reading against this
+    # ticker's own history (or the realised-vol proxy until that history exists).
+    atm_iv = _atm_iv_pct(chain, S)
+    if atm_iv > 0:
+        iv_history.record_atm_iv(sym, atm_iv)
+    iv_stats = iv_history.compute_iv_stats(sym, atm_iv, hv_series)
+
+    cal = _calendar_dict(ticker)
+    earnings = _next_earnings(cal)
+    exdiv = _next_exdiv(cal)
+
+    spreads = _build_spreads(sym, S, expiry, expiry_date, dte, chain,
+                             hv30, iv_stats, earnings, exdiv)
+
+    window = dte + 2
+    stock_evts = _stock_events(cal, window)
+    macro_evts = [e for e in macro if e["days_away"] <= window]
+    all_evts = sorted(stock_evts + macro_evts, key=lambda x: x["days_away"])
+    for s in spreads:
+        s["events"] = all_evts
+        s["tech"] = tech
+
+    return spreads
+
+
+# ---------------------------------------------------------------------------
 # Main scan function with daily in-memory cache
 # ---------------------------------------------------------------------------
 
@@ -532,39 +869,22 @@ def scan_single_ticker(sym: str) -> dict:
     today_str = date.today().isoformat()
     macro = _macro_events(window_days=50)
     try:
-        ticker = yf.Ticker(sym)
-        S = _num(ticker.fast_info.last_price)
-        if S <= 0:
-            return {"error": f"No price data for {sym}", "spreads": []}
-
-        options_dates = list(ticker.options)
-        if not options_dates:
-            return {"error": f"{sym} has no options chain", "spreads": []}
-
-        expiry = _find_target_expiry(options_dates)
-        if not expiry:
-            return {"error": f"{sym} has no expiry in the 30–45 DTE window", "spreads": []}
-
-        expiry_date = datetime.strptime(expiry, "%Y-%m-%d").date()
-        dte = (expiry_date - date.today()).days
-        chain = ticker.option_chain(expiry)
-        hv30, tech = _compute_history_metrics(ticker)
-        spreads = _build_spreads(sym, S, expiry, dte, chain, hv30)
+        spreads = _scan_ticker(sym, macro)
         spreads = [s for s in spreads if _num(s.get("roi_pct")) > 0]
-
-        window = dte + 2
-        stock_evts = _stock_events(ticker, window)
-        macro_evts = [e for e in macro if e["days_away"] <= window]
-        all_evts = sorted(stock_evts + macro_evts, key=lambda x: x["days_away"])
-        for s in spreads:
-            s["events"] = all_evts
-            s["tech"] = tech
 
         if not spreads:
             return {"error": f"{sym} passed filters but no spreads met the criteria (check liquidity / DTE)", "spreads": []}
 
-        return _json_safe({"spreads": spreads, "ticker": sym, "date": today_str, "after_hours": not _is_market_open()})
+        return _json_safe({
+            "spreads": spreads,
+            "ticker": sym,
+            "date": today_str,
+            "after_hours": not _is_market_open(),
+            "minutes_since_open": _session_minutes(),
+        })
 
+    except ValueError as e:
+        return {"error": str(e), "spreads": []}
     except Exception as e:
         log.warning("scan_single_ticker %s: %s", sym, e)
         return {"error": f"Failed to scan {sym}: {e}", "spreads": []}
@@ -576,30 +896,30 @@ def scan_credit_spreads(force_refresh: bool = False) -> dict:
     today_str = date.today().isoformat()
 
     after_hours = not _is_market_open()
+    session_min = _session_minutes()
+    opening_range = session_min is not None and session_min < OPENING_RANGE_MINUTES
+
+    def _envelope(spreads: list[dict], vix: float, cached: bool, when: str) -> dict:
+        return {
+            "spreads": spreads,
+            "vix": vix,
+            "vix_info": vix_label(vix),
+            "cached": cached,
+            "after_hours": after_hours,
+            "minutes_since_open": session_min,
+            "opening_range": opening_range,
+            "opening_range_minutes": OPENING_RANGE_MINUTES,
+            "date": when,
+            "count": len(spreads),
+        }
 
     # After hours: always serve cache if available — live bids are gone so a
     # fresh scan would overwrite good data with near-empty results.
     if after_hours and not force_refresh and _cache:
-        return {
-            "spreads": _cache[1],
-            "vix": _cache[2],
-            "vix_info": vix_label(_cache[2]),
-            "cached": True,
-            "after_hours": True,
-            "date": _cache[0],
-            "count": len(_cache[1]),
-        }
+        return _envelope(_cache[1], _cache[2], True, _cache[0])
 
     if not force_refresh and _cache and _cache[0] == today_str:
-        return {
-            "spreads": _cache[1],
-            "vix": _cache[2],
-            "vix_info": vix_label(_cache[2]),
-            "cached": True,
-            "after_hours": after_hours,
-            "date": today_str,
-            "count": len(_cache[1]),
-        }
+        return _envelope(_cache[1], _cache[2], True, today_str)
 
     vix = get_vix()
     all_spreads: list[dict] = []
@@ -609,37 +929,9 @@ def scan_credit_spreads(force_refresh: bool = False) -> dict:
 
     for sym in CURATED_TICKERS:
         try:
-            ticker = yf.Ticker(sym)
-            S = float(ticker.fast_info.last_price)
-            if S <= 0:
-                continue
-
-            options_dates = list(ticker.options)
-            expiry = _find_target_expiry(options_dates)
-            if not expiry:
-                log.debug("%s: no expiry in 30-45 DTE window", sym)
-                continue
-
-            expiry_date = datetime.strptime(expiry, "%Y-%m-%d").date()
-            dte = (expiry_date - date.today()).days
-
-            chain = ticker.option_chain(expiry)
-            hv30, tech = _compute_history_metrics(ticker)
-            spreads = _build_spreads(sym, S, expiry, dte, chain, hv30)
-
-            # Collect events within the spread's lifetime (DTE + 2-day buffer)
-            window = dte + 2
-            stock_evts = _stock_events(ticker, window)
-            macro_evts = [e for e in macro if e["days_away"] <= window]
-            all_evts = sorted(stock_evts + macro_evts, key=lambda x: x["days_away"])
-
-            for s in spreads:
-                s["events"] = all_evts
-                s["tech"] = tech
-
+            spreads = _scan_ticker(sym, macro)
             all_spreads.extend(spreads)
-            log.info("%s: found %d spread(s), %d event(s)", sym, len(spreads), len(all_evts))
-
+            log.info("%s: found %d spread(s)", sym, len(spreads))
         except Exception as e:
             log.warning("Skipping %s: %s", sym, e)
 
@@ -651,24 +943,7 @@ def scan_credit_spreads(force_refresh: bool = False) -> dict:
     # Don't overwrite a good cache with an empty scan (e.g. after-hours bid=0)
     if not all_spreads and _cache and _cache[0] == today_str:
         log.warning("Fresh scan returned 0 spreads — keeping existing cache")
-        return {
-            "spreads": _cache[1],
-            "vix": vix,
-            "vix_info": vix_label(vix),
-            "cached": True,
-            "after_hours": after_hours,
-            "date": today_str,
-            "count": len(_cache[1]),
-        }
+        return _envelope(_cache[1], vix, True, today_str)
 
     _cache = (today_str, all_spreads, vix)
-
-    return {
-        "spreads": all_spreads,
-        "vix": vix,
-        "vix_info": vix_label(vix),
-        "cached": False,
-        "after_hours": after_hours,
-        "date": today_str,
-        "count": len(all_spreads),
-    }
+    return _envelope(all_spreads, vix, False, today_str)
