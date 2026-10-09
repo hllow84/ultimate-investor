@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     environment: str = "development"
     secret_key: str = "change-me-in-production"
 
+    # Institutional Long-Horizon Lab integration (read-only).
+    # Local default assumes both projects sit side-by-side under C:\Claude Code.
+    # Override via LAB_ROOT in .env if the Lab lives somewhere else.
+    lab_root: str = "C:/Claude Code/Institutional Long-Horizon Lab"
+
     class Config:
         env_file = ".env"
 
