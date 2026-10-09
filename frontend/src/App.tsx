@@ -9,6 +9,10 @@ import Compare from "@/pages/Compare";
 import OptionsSpreads from "@/pages/OptionsSpreads";
 import Login from "@/pages/Login";
 import Register from "@/pages/Register";
+import ResearchOverview from "@/pages/research/ResearchOverview";
+import ResearchStrategies from "@/pages/research/ResearchStrategies";
+import ResearchPortfolios from "@/pages/research/ResearchPortfolios";
+import ResearchPaperTrading from "@/pages/research/ResearchPaperTrading";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
@@ -26,7 +30,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
  */
 function MainContainer({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation();
-  const wide = pathname.startsWith("/options");
+  const wide = pathname.startsWith("/options") || pathname.startsWith("/research");
   return (
     <main className={`flex-1 mx-auto w-full px-4 py-8 ${wide ? "max-w-[1800px]" : "max-w-7xl"}`}>
       {children}
@@ -50,6 +54,10 @@ function AppRoutes() {
                 <Route path="/stock/:ticker" element={<StockDetail />} />
                 <Route path="/compare" element={<Compare />} />
                 <Route path="/options" element={<OptionsSpreads />} />
+                <Route path="/research" element={<ResearchOverview />} />
+                <Route path="/research/strategies" element={<ResearchStrategies />} />
+                <Route path="/research/portfolios" element={<ResearchPortfolios />} />
+                <Route path="/research/paper-trading" element={<ResearchPaperTrading />} />
                 <Route
                   path="/watchlist"
                   element={

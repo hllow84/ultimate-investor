@@ -14,6 +14,14 @@ import type {
   PortfolioResponse,
   SpreadPositionCreate,
 } from "@/types";
+import type {
+  LabHealth,
+  StrategiesResponse,
+  DiagnosticsResponse,
+  PortfoliosResponse,
+  PaperTradingLogResponse,
+  PaperTradingLatestResponse,
+} from "@/types/lab";
 
 const BASE = "/api";
 
@@ -91,5 +99,13 @@ export const api = {
       post<{ id: number; ticker: string; expiry: string }>(`/options/positions`, p, true),
     closePosition: (id: number) => patch<{ id: number }>(`/options/positions/${id}/close`),
     deletePosition: (id: number) => del(`/options/positions/${id}`),
+  },
+  lab: {
+    health: () => get<LabHealth>(`/lab/health`),
+    strategies: () => get<StrategiesResponse>(`/lab/strategies`),
+    diagnostics: () => get<DiagnosticsResponse>(`/lab/diagnostics`),
+    portfolios: () => get<PortfoliosResponse>(`/lab/portfolios`),
+    paperTradingLog: () => get<PaperTradingLogResponse>(`/lab/paper-trading/log`),
+    paperTradingLatest: () => get<PaperTradingLatestResponse>(`/lab/paper-trading/latest`),
   },
 };

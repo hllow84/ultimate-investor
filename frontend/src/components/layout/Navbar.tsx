@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Search, TrendingUp, Bell, Star, BarChart2, Layers, LogIn, LogOut, User } from "lucide-react";
+import { Search, TrendingUp, Bell, Star, BarChart2, Layers, LogIn, LogOut, User, Microscope } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
 export default function Navbar() {
@@ -45,6 +45,9 @@ export default function Navbar() {
       </form>
 
       <div className="flex items-center gap-4 ml-auto">
+        <Link to="/research" className="flex items-center gap-1.5 text-sm" style={{ color: "var(--muted)" }}>
+          <Microscope size={16} /> Research
+        </Link>
         <Link to="/options" className="flex items-center gap-1.5 text-sm" style={{ color: "var(--muted)" }}>
           <Layers size={16} /> Spreads
         </Link>
