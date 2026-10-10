@@ -16,7 +16,7 @@ function strategyId(key: string): string {
 }
 
 export default function ResearchStrategies() {
-  const { data, isPending, isError, error } = useLabStrategies();
+  const { data, isPending, isError, error, fetchStatus, refetch } = useLabStrategies();
 
   return (
     <div>
@@ -26,8 +26,8 @@ export default function ResearchStrategies() {
       </div>
       <ResearchTabs />
 
-      {isPending && <LoadingNotice label="Loading strategy results…" />}
-      {isError && <QueryErrorNotice error={error} />}
+      {isPending && <LoadingNotice label="Loading strategy results…" fetchStatus={fetchStatus} />}
+      {isError && <QueryErrorNotice error={error} onRetry={() => refetch()} />}
 
       {data && (
         <div className="flex flex-col gap-4">
@@ -111,6 +111,11 @@ export default function ResearchStrategies() {
                               {def && (
                                 <div>
                                   <p className="text-xs font-medium mb-1" style={{ color: "var(--muted)" }}>Deflated Sharpe</p>
+                                  <p className="text-xs mb-2" style={{ color: "var(--muted)" }}>
+                                    Probability the strategy's true in-sample Sharpe exceeds a benchmark adjusted
+                                    for the number of pre-registered variants tested (Bailey &amp; L&oacute;pez de
+                                    Prado, 2014) -- not a forecast of future performance.
+                                  </p>
                                   <MetricsTable metrics={def} />
                                 </div>
                               )}

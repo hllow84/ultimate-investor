@@ -1,6 +1,24 @@
 import { Loader2, WifiOff } from "lucide-react";
 
-export function LoadingNotice({ label = "Loading Lab data…" }: { label?: string }) {
+/**
+ * `fetchStatus` distinguishes an actively in-flight request ("fetching")
+ * from a query that React Query has paused rather than firing -- e.g. the
+ * browser is offline, or `networkMode: 'online'` (the default) is holding
+ * the request back. `isPending` alone stays true in both cases, so without
+ * this a paused query would render an indefinite "Loading…" spinner with no
+ * indication of why it never resolves.
+ */
+export function LoadingNotice({
+  label = "Loading Lab data…", fetchStatus,
+}: { label?: string; fetchStatus?: "fetching" | "paused" | "idle" }) {
+  if (fetchStatus === "paused") {
+    return (
+      <div className="flex items-center gap-2 py-8 justify-center text-sm" style={{ color: "var(--muted)" }}>
+        <WifiOff size={16} />
+        Waiting for a network connection -- the request has been paused, not lost.
+      </div>
+    );
+  }
   return (
     <div className="flex items-center gap-2 py-8 justify-center text-sm" style={{ color: "var(--muted)" }}>
       <Loader2 size={16} className="animate-spin" />
@@ -11,7 +29,7 @@ export function LoadingNotice({ label = "Loading Lab data…" }: { label?: strin
 
 /** For transport-level failures (network error, 503 Lab-unavailable) as
  * opposed to a 200 response that reports a per-artifact status. */
-export function QueryErrorNotice({ error }: { error: unknown }) {
+export function QueryErrorNotice({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
   const message = error instanceof Error ? error.message : "Unknown error";
   const isUnavailable = message.includes("503");
   return (
@@ -29,6 +47,15 @@ export function QueryErrorNotice({ error }: { error: unknown }) {
             ? "The website backend could not reach the Lab's project root. Research data cannot be displayed until this is resolved."
             : message}
         </p>
+        {onRetry && (
+          <button
+            onClick={onRetry}
+            className="text-xs mt-2 px-3 py-1 rounded-lg"
+            style={{ border: "1px solid var(--border)", color: "var(--text)" }}
+          >
+            Retry
+          </button>
+        )}
       </div>
     </div>
   );

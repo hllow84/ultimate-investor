@@ -94,9 +94,25 @@ export default function ResearchPaperTrading() {
         meaningful live track record.
       </p>
 
-      {(latestQuery.isPending || logQuery.isPending) && <LoadingNotice label="Loading paper-trading records…" />}
+      {(latestQuery.isPending || logQuery.isPending) && (
+        <LoadingNotice
+          label="Loading paper-trading records…"
+          fetchStatus={
+            (latestQuery.isPending && latestQuery.fetchStatus === "paused") ||
+            (logQuery.isPending && logQuery.fetchStatus === "paused")
+              ? "paused"
+              : undefined
+          }
+        />
+      )}
       {(latestQuery.isError || logQuery.isError) && (
-        <QueryErrorNotice error={latestQuery.error ?? logQuery.error} />
+        <QueryErrorNotice
+          error={latestQuery.error ?? logQuery.error}
+          onRetry={() => {
+            if (latestQuery.isError) latestQuery.refetch();
+            if (logQuery.isError) logQuery.refetch();
+          }}
+        />
       )}
 
       {latest && (

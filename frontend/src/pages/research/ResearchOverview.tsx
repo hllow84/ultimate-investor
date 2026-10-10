@@ -23,15 +23,15 @@ const LINKS = [
 ];
 
 export default function ResearchOverview() {
-  const { data, isPending, isError, error } = useLabHealth();
+  const { data, isPending, isError, error, fetchStatus, refetch } = useLabHealth();
 
   return (
     <div>
       <Header />
       <ResearchTabs />
 
-      {isPending && <LoadingNotice label="Checking Lab connectivity…" />}
-      {isError && <QueryErrorNotice error={error} />}
+      {isPending && <LoadingNotice label="Checking Lab connectivity…" fetchStatus={fetchStatus} />}
+      {isError && <QueryErrorNotice error={error} onRetry={() => refetch()} />}
 
       {data && (
         <div className="flex flex-col gap-6">

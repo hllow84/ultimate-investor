@@ -7,7 +7,7 @@ import MetricsTable, { MetricsComparisonTable } from "@/components/lab/MetricsTa
 import WeightsBar from "@/components/lab/WeightsBar";
 import CorrelationMatrix from "@/components/lab/CorrelationMatrix";
 import { LoadingNotice, QueryErrorNotice } from "@/components/lab/QueryStateNotice";
-import { looksLikeMetrics, pickCoreMetrics, formatRatio, formatPercent } from "@/utils/labFormat";
+import { looksLikeMetrics, pickCoreMetrics, formatRatio, formatPercent, classifyRegimeOverlap } from "@/utils/labFormat";
 
 const ROLLING_KEY_PREFIX = "rolling_";
 
@@ -81,6 +81,14 @@ export default function ResearchPortfolios() {
 
   const loading = diag.isPending || port.isPending;
   const anyError = diag.error ?? port.error;
+  const pausedFetchStatus =
+    (diag.isPending && diag.fetchStatus === "paused") || (port.isPending && port.fetchStatus === "paused")
+      ? "paused"
+      : undefined;
+  const retryFailed = () => {
+    if (diag.isError) diag.refetch();
+    if (port.isError) port.refetch();
+  };
 
   return (
     <div>
@@ -95,8 +103,8 @@ export default function ResearchPortfolios() {
         brokerage position -- these are simulated allocations evaluated against historical data.
       </p>
 
-      {loading && <LoadingNotice label="Loading portfolio diagnostics…" />}
-      {(diag.isError || port.isError) && <QueryErrorNotice error={anyError} />}
+      {loading && <LoadingNotice label="Loading portfolio diagnostics…" fetchStatus={pausedFetchStatus} />}
+      {(diag.isError || port.isError) && <QueryErrorNotice error={anyError} onRetry={retryFailed} />}
 
       {diag.data && (
         <div className="mb-4">
@@ -143,6 +151,74 @@ export default function ResearchPortfolios() {
                         </tbody>
                       </table>
                     </div>
+                    <details className="mt-2">
+                      <summary className="text-xs cursor-pointer" style={{ color: "var(--accent)" }}>
+                        Per-regime overlap with 60/40 (does each strategy's drawdown coincide with,
+                        or offset, 60/40's?)
+                      </summary>
+                      <div className="mt-2 flex flex-col gap-3">
+                        {Object.entries(combination.partA_vs_6040).map(([stratKey, v]) => {
+                          const regimeOverlap = (v as Record<string, unknown>).regime_overlap as
+                            | Record<string, Record<string, unknown>>
+                            | undefined;
+                          if (!regimeOverlap) return null;
+                          return (
+                            <div key={stratKey}>
+                              <p className="text-xs font-medium mb-1">{stratKey}</p>
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-xs min-w-[520px]">
+                                  <thead>
+                                    <tr style={{ borderBottom: "1px solid var(--border)" }}>
+                                      <th className="text-left py-1 pr-3" style={{ color: "var(--muted)" }}>Regime</th>
+                                      <th className="text-right py-1 pr-3" style={{ color: "var(--muted)" }}>Strategy return</th>
+                                      <th className="text-right py-1 pr-3" style={{ color: "var(--muted)" }}>60/40 return</th>
+                                      <th className="text-right py-1" style={{ color: "var(--muted)" }}>Drawdown overlap</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {Object.entries(regimeOverlap).map(([regimeName, r]) => {
+                                      if (r.testable !== true) {
+                                        return (
+                                          <tr key={regimeName} style={{ borderTop: "1px solid var(--border)" }}>
+                                            <td className="py-1 pr-3">{regimeName}</td>
+                                            <td className="py-1 pr-3 text-right" colSpan={3} style={{ color: "var(--muted)" }}>
+                                              Not testable (insufficient data in this window)
+                                            </td>
+                                          </tr>
+                                        );
+                                      }
+                                      const classification = classifyRegimeOverlap(r.offsetting, r.coincident_drawdown);
+                                      const LABEL: Record<typeof classification, string> = {
+                                        offsetting: "Offsetting",
+                                        coincident: "Coincident drawdown",
+                                        neither: "Neither (no benchmark drawdown, or exact tie)",
+                                        unknown: "Unknown (missing or unexpected data)",
+                                      };
+                                      const COLOR: Record<typeof classification, string> = {
+                                        offsetting: "var(--green)",
+                                        coincident: "var(--red)",
+                                        neither: "var(--muted)",
+                                        unknown: "var(--yellow)",
+                                      };
+                                      return (
+                                        <tr key={regimeName} style={{ borderTop: "1px solid var(--border)" }}>
+                                          <td className="py-1 pr-3">{regimeName}</td>
+                                          <td className="py-1 pr-3 text-right font-mono">{formatPercent(r.strat_total_return as number)}</td>
+                                          <td className="py-1 pr-3 text-right font-mono">{formatPercent(r["6040_total_return"] as number)}</td>
+                                          <td className="py-1 text-right" style={{ color: COLOR[classification] }}>
+                                            {LABEL[classification]}
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </details>
                   </div>
                 )}
               </div>
@@ -162,10 +238,41 @@ export default function ResearchPortfolios() {
                   {entries.map(([name, value]) => (
                     <PortfolioCard key={name} name={name} value={value as Record<string, unknown>} />
                   ))}
-                  {rollingKeys.length > 0 && (
+                  {typeof portfolios.rolling_12mo_drawdown === "object" && portfolios.rolling_12mo_drawdown && (
+                    <div className="mt-4 pt-4" style={{ borderTop: "1px solid var(--border)" }}>
+                      <p className="text-xs font-medium mb-2" style={{ color: "var(--muted)" }}>
+                        Rolling 12-month drawdown, by construction
+                      </p>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs min-w-[420px]">
+                          <thead>
+                            <tr style={{ borderBottom: "1px solid var(--border)" }}>
+                              <th className="text-left py-1 pr-3" style={{ color: "var(--muted)" }}>Construction</th>
+                              <th className="text-right py-1 pr-3" style={{ color: "var(--muted)" }}>Worst 12mo DD</th>
+                              <th className="text-right py-1 pr-3" style={{ color: "var(--muted)" }}>Mean 12mo DD</th>
+                              <th className="text-right py-1" style={{ color: "var(--muted)" }}>Worst-DD window ended</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {Object.entries(
+                              portfolios.rolling_12mo_drawdown as Record<string, Record<string, unknown>>
+                            ).map(([name, v]) => (
+                              <tr key={name} style={{ borderTop: "1px solid var(--border)" }}>
+                                <td className="py-1 pr-3">{name}</td>
+                                <td className="py-1 pr-3 text-right font-mono">{formatPercent(v.worst as number)}</td>
+                                <td className="py-1 pr-3 text-right font-mono">{formatPercent(v.mean as number)}</td>
+                                <td className="py-1 text-right font-mono">{String(v.worst_date ?? "—")}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                  {rollingKeys.filter((k) => k !== "rolling_12mo_drawdown").length > 0 && (
                     <p className="text-xs mt-4" style={{ color: "var(--muted)" }}>
                       Additional rolling diagnostics present in the API response but not yet
-                      visualized: {rollingKeys.join(", ")}.
+                      visualized: {rollingKeys.filter((k) => k !== "rolling_12mo_drawdown").join(", ")}.
                     </p>
                   )}
                 </div>
@@ -220,6 +327,26 @@ export default function ResearchPortfolios() {
                 {Object.entries(significance).map(([compKey, comp]) => (
                   <div key={compKey} className="pt-3" style={{ borderTop: "1px solid var(--border)" }}>
                     <h3 className="font-semibold text-sm mb-2">{compKey}</h3>
+                    {typeof comp.verdict === "string" && (() => {
+                      // Highlight directly off the verdict string itself, not off
+                      // jk_and_bootstrap_agree_at_5pct alone -- the producer's own
+                      // decision ladder (phase7_significance.py run_pair()) has a
+                      // branch ("INCONCLUSIVE -- sensitive to block-length choice")
+                      // that can fire even when that one flag is true, so keying off
+                      // the flag alone would silently miss that case.
+                      const isInconclusive = comp.verdict.startsWith("INCONCLUSIVE");
+                      return (
+                        <p
+                          className="text-xs mb-2 px-2 py-1 rounded-lg inline-block"
+                          style={{
+                            border: `1px solid ${isInconclusive ? "var(--yellow)" : "var(--border)"}`,
+                            color: isInconclusive ? "var(--yellow)" : "var(--muted)",
+                          }}
+                        >
+                          Verdict: {comp.verdict}
+                        </p>
+                      );
+                    })()}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {comp.jobson_korkie_memmel && (
                         <div>
@@ -228,13 +355,13 @@ export default function ResearchPortfolios() {
                         </div>
                       )}
                       <div>
-                        <p className="text-xs font-medium mb-1" style={{ color: "var(--muted)" }}>Block bootstrap (annualized Sharpe diff, 95% CI)</p>
+                        <p className="text-xs font-medium mb-1" style={{ color: "var(--muted)" }}>Block bootstrap (annualized Sharpe diff, 95% CI, Sharpe units -- not a % return)</p>
                         <table className="w-full text-sm">
                           <thead>
                             <tr style={{ borderBottom: "1px solid var(--border)" }}>
                               <th className="text-left py-1" style={{ color: "var(--muted)" }}>Block</th>
-                              <th className="text-right py-1" style={{ color: "var(--muted)" }}>Estimate</th>
-                              <th className="text-right py-1" style={{ color: "var(--muted)" }}>95% CI</th>
+                              <th className="text-right py-1" style={{ color: "var(--muted)" }}>Sharpe diff</th>
+                              <th className="text-right py-1" style={{ color: "var(--muted)" }}>95% CI (Sharpe)</th>
                               <th className="text-right py-1" style={{ color: "var(--muted)" }}>Excl. zero</th>
                             </tr>
                           </thead>
@@ -245,9 +372,9 @@ export default function ResearchPortfolios() {
                               return (
                                 <tr key={bk} style={{ borderTop: "1px solid var(--border)" }}>
                                   <td className="py-1">{bk.replace("block_bootstrap_", "")}</td>
-                                  <td className="py-1 text-right font-mono">{formatPercent(b.point_estimate_annualized)}</td>
+                                  <td className="py-1 text-right font-mono">{formatRatio(b.point_estimate_annualized)}</td>
                                   <td className="py-1 text-right font-mono">
-                                    [{formatPercent(b["ci_2.5"])}, {formatPercent(b["ci_97.5"])}]
+                                    [{formatRatio(b["ci_2.5"])}, {formatRatio(b["ci_97.5"])}]
                                   </td>
                                   <td className="py-1 text-right">{b.excludes_zero ? "Yes" : "No"}</td>
                                 </tr>

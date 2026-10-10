@@ -71,6 +71,9 @@ export interface PortfoliosResponse {
     block_bootstrap_6mo?: Record<string, unknown>;
     block_bootstrap_12mo?: Record<string, unknown>;
     block_length_sensitivity_agrees?: boolean;
+    jk_and_bootstrap_agree_at_5pct?: boolean;
+    verdict?: string;
+    n_months?: number;
   }>>;
 }
 

@@ -39,10 +39,18 @@ export function formatDateTime(v: unknown): string {
 export const PERCENT_FIELDS = new Set([
   "CAGR", "AnnVol", "MaxDD", "BestYear", "WorstYear", "BestMonth", "WorstMonth",
   "WorstQuarter", "TotalReturn", "total_return",
+  // PctPositiveYears is a decimal fraction of years (e.g. 0.4375 = 43.75% of
+  // years positive) -- a RATIO_FIELD would show it as "0.44", which reads as
+  // a Sharpe-like ratio rather than a share of years.
+  "PctPositiveYears",
+  // DeflatedSharpeProb (Bailey & Lopez de Prado) is a probability in [0,1],
+  // not a Sharpe-like ratio -- show it as a percentage so it isn't misread
+  // as a small raw statistic.
+  "DeflatedSharpeProb",
 ]);
-export const RATIO_FIELDS = new Set(["Sharpe", "Sortino", "Calmar", "PctPositiveYears"]);
+export const RATIO_FIELDS = new Set(["Sharpe", "Sortino", "Calmar"]);
 export const DATE_FIELDS = new Set(["StartDate", "EndDate", "DrawdownTrough", "RecoveryDate"]);
-export const COUNT_FIELDS = new Set(["NYears", "NMonths", "RecoveryDays", "RecoveryMonths"]);
+export const COUNT_FIELDS = new Set(["NYears", "NMonths", "RecoveryDays", "RecoveryMonths", "N_trials", "T_months", "n", "n_boot", "block_len", "n_months"]);
 
 const METRIC_KEY_HINTS = ["CAGR", "Sharpe", "Sortino", "AnnVol", "MaxDD", "Calmar"];
 
@@ -82,4 +90,56 @@ export function pickCoreMetrics(obj: Record<string, unknown>): Record<string, un
     if (k in obj) out[k] = obj[k];
   }
   return out;
+}
+
+// --- Regime-overlap boolean flags (phase6_combination.json) ----------------
+//
+// Verified against the producer, `code/phase6_combination.py` (function
+// building `partA_vs_6040[*]["regime_overlap"]`):
+//   both_down = strat_cum < 0 and bench_cum < 0        -> coincident_drawdown
+//   offset    = strat_cum > 0 and bench_cum < 0         -> offsetting
+// `strat_cum`/`bench_cum` are pandas/numpy floats, so both comparisons
+// produce `numpy.bool_`, not a native Python bool. The file is written via
+// `json.dump(jsafe(out), ..., default=str)`, and `jsafe()` only coerces
+// `np.floating`/`np.integer` -- it does not touch `np.bool_` -- so `json.dump`
+// falls through to `default=str`, which serializes the value as the literal
+// string "True" or "False" (capitalized, matching Python's `str(bool)`).
+// This is a serialization quirk of the producer, not an intentional string
+// type, confirmed directly in source (not inferred from the field name).
+//
+// The two flags always co-occur (set together in the same dict literal) and
+// are only present when `testable` is `true`; a `testable: false` entry omits
+// them entirely. By the producer's own formula they are mutually exclusive
+// (offsetting requires strat_cum > 0, coincident_drawdown requires
+// strat_cum < 0 -- both can't hold for the same value) but not exhaustive:
+// both are false whenever bench_cum >= 0 (this regime showed no benchmark
+// drawdown at all, so the overlap question does not apply) or in the
+// knife-edge case strat_cum == 0 exactly while bench_cum < 0.
+
+/** Parses one of the Lab's regime-overlap flags. Accepts the real emitted
+ * shape (string "True"/"False") and, defensively, a genuine boolean (in case
+ * a future producer run fixes the jsafe() gap above and emits real JSON
+ * booleans) -- anything else (missing, null, "true"/"false" lowercase, any
+ * other value) returns `undefined` rather than being coerced to `false`. */
+export function parseLabBoolFlag(v: unknown): boolean | undefined {
+  if (v === true || v === "True") return true;
+  if (v === false || v === "False") return false;
+  return undefined;
+}
+
+export type RegimeOverlapClassification = "offsetting" | "coincident" | "neither" | "unknown";
+
+/** Classifies one regime's overlap from its raw `offsetting`/`coincident_drawdown`
+ * flags. Never falls through to "neither" when the source data can't actually
+ * support that conclusion -- missing/malformed/unexpected values, or the
+ * (producer-impossible, so necessarily corrupt-data) case of both flags
+ * reading true at once, are reported as "unknown" instead. */
+export function classifyRegimeOverlap(offsettingRaw: unknown, coincidentRaw: unknown): RegimeOverlapClassification {
+  const offsetting = parseLabBoolFlag(offsettingRaw);
+  const coincident = parseLabBoolFlag(coincidentRaw);
+  if (offsetting === undefined || coincident === undefined) return "unknown";
+  if (offsetting && coincident) return "unknown"; // contradictory; impossible per producer's own formula
+  if (offsetting) return "offsetting";
+  if (coincident) return "coincident";
+  return "neither";
 }

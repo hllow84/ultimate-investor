@@ -4,7 +4,20 @@ const LABELS: Record<string, string> = {
   CAGR: "CAGR", Sharpe: "Sharpe", Sortino: "Sortino", AnnVol: "Ann. Vol",
   MaxDD: "Max Drawdown", Calmar: "Calmar", BestYear: "Best Year", WorstYear: "Worst Year",
   BestMonth: "Best Month", WorstMonth: "Worst Month", StartDate: "Start", EndDate: "End",
-  NYears: "Years", NMonths: "Months",
+  NYears: "Years", NMonths: "Months", PctPositiveYears: "% Positive Years",
+  // Deflated/probabilistic Sharpe (Bailey & Lopez de Prado) fields.
+  RawSharpe_ann: "Raw Sharpe (ann.)", N_trials: "N trials (pre-registered)", T_months: "T (months)",
+  skew_monthly: "Skew (monthly)", kurtosis_monthly: "Kurtosis (monthly)",
+  // Per code/deflated_sharpe.py: psr = norm.cdf(z), where z compares the
+  // observed Sharpe against sr0 (0 for N_trials=1; otherwise the expected
+  // max Sharpe from N_trials skill-less trials). So this is specifically
+  // P(true Sharpe > that N-trial-adjusted benchmark) -- an in-sample,
+  // selection-adjusted statistic, not a forecast of future performance or a
+  // general "probability of a genuine edge".
+  DeflatedSharpeProb: "P(true Sharpe > N-trial benchmark)",
+  // Jobson-Korkie-Memmel fields.
+  SR1: "Sharpe 1", SR2: "Sharpe 2", SR_diff_annualized: "Sharpe diff (ann.)",
+  z_stat: "z-statistic", p_value: "p-value", correlation: "Correlation", n: "n (months)",
 };
 
 /**
